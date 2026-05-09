@@ -6,4 +6,4 @@
 * use uv instead of pip
 
 # API Specification
-https://www.notion.so/API-214e6909e87980a6a74bce0a15033088?source=copy_link
+https://www.notion.so/api-34d4deccb21e8024a8e1db08cf2a2f01
