@@ -1,0 +1,7 @@
+.git
+.venv
+__pycache__
+*.pyc
+.env
+postgres_data
+487faabe-a29a-438f-9a78-d266ba746e20_ExportBlock-39d8dfa3-da1f-4003-88e7-f15ef14ceb27.zip

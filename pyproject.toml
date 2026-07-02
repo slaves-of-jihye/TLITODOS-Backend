@@ -3,5 +3,11 @@ name = "tlitodos-backend"
 version = "0.1.0"
 requires-python = ">=3.14"
 dependencies = [
+    "asyncpg>=0.31.0",
     "fastapi>=0.136.1",
+    "httpx>=0.28.1",
+    "pyjwt>=2.10.1",
+    "python-multipart>=0.0.32",
+    "sqlalchemy[asyncio]>=2.0.45",
+    "uvicorn[standard]>=0.35.0",
 ]
