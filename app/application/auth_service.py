@@ -5,8 +5,10 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infrastructure.database import AuthToken, User, ensure_user_defaults, user_to_response
-from app.shared.tokens import create_access_token
+from datetime import datetime
+
+from app.infrastructure.database import AuthToken, RefreshToken, User, ensure_user_defaults, user_to_response
+from app.shared.tokens import create_access_token, create_refresh_token, hash_token
 from app.shared.uploads import save_upload
 
 GOOGLE_TOKENINFO_URL = "https://oauth2.googleapis.com/tokeninfo"
@@ -18,10 +20,46 @@ DISCORD_USER_URL = "https://discord.com/api/users/@me"
 async def login_with_google(session: AsyncSession, google_access_token: str) -> dict:
     google_profile = await fetch_google_profile(google_access_token)
     user = await upsert_google_user(session, google_profile)
-    access_token, expires_at = create_access_token(user.id)
-    session.add(AuthToken(token=access_token, user_id=user.id, expires_at=expires_at))
+    token_pair = await issue_token_pair(session, user.id)
     await session.commit()
-    return {"accessToken": access_token, "expiresAt": expires_at.isoformat(), "isNewUser": google_profile["isNewUser"]}
+    return {
+        "accessToken": token_pair["accessToken"],
+        "refreshToken": token_pair["refreshToken"],
+        "expiresAt": token_pair["expiresAt"],
+        "isNewUser": google_profile["isNewUser"],
+    }
+
+
+async def issue_token_pair(session: AsyncSession, user_id: int) -> dict:
+    access_token, access_expires_at = create_access_token(user_id)
+    refresh_token, refresh_token_hash, refresh_expires_at = create_refresh_token()
+    session.add(AuthToken(token=access_token, user_id=user_id, expires_at=access_expires_at))
+    session.add(RefreshToken(token_hash=refresh_token_hash, user_id=user_id, expires_at=refresh_expires_at))
+    return {
+        "accessToken": access_token,
+        "refreshToken": refresh_token,
+        "expiresAt": access_expires_at.isoformat(),
+        "refreshExpiresAt": refresh_expires_at.isoformat(),
+    }
+
+
+async def refresh_tokens(session: AsyncSession, refresh_token: str) -> dict:
+    stored_token = await session.scalar(select(RefreshToken).where(RefreshToken.token_hash == hash_token(refresh_token)))
+    if stored_token is None or stored_token.revoked_at is not None or stored_token.expires_at <= datetime.utcnow():
+        raise HTTPException(status_code=401, detail={"message": "유효하지 않거나 만료된 리프레시 토큰입니다."})
+
+    stored_token.revoked_at = datetime.utcnow()
+    token_pair = await issue_token_pair(session, stored_token.user_id)
+    await session.commit()
+    return token_pair
+
+
+async def logout(session: AsyncSession, refresh_token: str) -> dict:
+    stored_token = await session.scalar(select(RefreshToken).where(RefreshToken.token_hash == hash_token(refresh_token)))
+    if stored_token is not None and stored_token.revoked_at is None:
+        stored_token.revoked_at = datetime.utcnow()
+        await session.commit()
+    return {"success": True, "message": "로그아웃되었습니다."}
 
 
 async def fetch_google_profile(access_token: str) -> dict:
