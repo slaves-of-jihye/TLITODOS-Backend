@@ -2,7 +2,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database import Bet, Category, Todo, bet_to_response, get_session, todo_to_response
@@ -98,7 +98,7 @@ async def list_todos(
     if group_id is not None:
         statement = statement.where(Todo.group_id == group_id)
     if date is not None:
-        statement = statement.where(Todo.due_date == date)
+        statement = statement.where(or_(Todo.due_date == date, Todo.due_date.is_(None)))
     todos = await session.scalars(statement.order_by(Todo.id))
     return [todo_to_response(todo) for todo in todos]
 
