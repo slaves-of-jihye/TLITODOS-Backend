@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -27,6 +28,17 @@ def create_access_token(user_id: int) -> tuple[str, datetime]:
         algorithm=JWT_ALGORITHM,
     )
     return token, expires_at.replace(tzinfo=None)
+
+
+def create_refresh_token() -> tuple[str, str, datetime]:
+    token = secrets.token_urlsafe(64)
+    token_hash = hash_token(token)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30")))
+    return token, token_hash, expires_at.replace(tzinfo=None)
+
+
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def decode_access_token(token: str) -> int | None:
