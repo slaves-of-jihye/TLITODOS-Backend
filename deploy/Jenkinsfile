@@ -1,0 +1,36 @@
+pipeline {
+    agent any
+
+    environment {
+        COMPOSE_FILE = 'deploy/docker-compose.yml'
+        ENV_FILE     = 'deploy/.env'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Load .env from Jenkins credentials') {
+            steps {
+                withCredentials([file(credentialsId: 'tlitodos-backend-env', variable: 'SECRET_ENV_FILE')]) {
+                    sh 'cp "$SECRET_ENV_FILE" "$ENV_FILE"'
+                }
+            }
+        }
+
+        stage('Compose up') {
+            steps {
+                sh 'docker compose -f "$COMPOSE_FILE" up -d --build'
+            }
+        }
+    }
+
+    post {
+        always {
+            sh 'rm -f "$ENV_FILE"'
+        }
+    }
+}
