@@ -63,10 +63,11 @@ async def create_todo(
 async def list_todos(
     group_id: int | None = Query(default=None, alias="groupId"),
     date: str | None = None,
+    target_user_id: int | None = Query(default=None, alias="userId"),
     user_id: int = Depends(require_access_token),
     session: AsyncSession = Depends(get_session),
 ):
-    return await todos_service.list_todos(session, user_id, group_id, date)
+    return await todos_service.list_todos(session, user_id, target_user_id, group_id, date)
 
 
 @router.patch("/{todoId}")

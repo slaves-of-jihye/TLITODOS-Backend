@@ -2,6 +2,7 @@ from fastapi import HTTPException
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.groups_service import require_shared_group_membership
 from app.infrastructure.database import Bet, Category, Todo, bet_to_response, todo_to_response
 
 
@@ -37,8 +38,23 @@ async def create_todo(session: AsyncSession, payload, user_id: int) -> dict:
     return todo_to_response(todo)
 
 
-async def list_todos(session: AsyncSession, user_id: int, group_id: int | None, date: str | None) -> list[dict]:
-    statement = select(Todo).where(Todo.user_id == user_id)
+async def list_todos(
+    session: AsyncSession,
+    requester_id: int,
+    target_user_id: int | None,
+    group_id: int | None,
+    date: str | None,
+) -> list[dict]:
+    owner_id = target_user_id if target_user_id is not None else requester_id
+
+    if owner_id != requester_id:
+        if group_id is None:
+            raise HTTPException(status_code=400, detail={"message": "다른 사용자의 할일을 조회하려면 groupId가 필요합니다."})
+        await require_shared_group_membership(session, group_id, requester_id, owner_id)
+
+    statement = select(Todo).where(Todo.user_id == owner_id)
+    if owner_id != requester_id:
+        statement = statement.where(Todo.visibility.in_(["GROUP", "PUBLIC"]))
     if group_id is not None:
         statement = statement.where(Todo.group_id == group_id)
     if date is not None:

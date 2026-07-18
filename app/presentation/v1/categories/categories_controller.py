@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,10 +17,12 @@ class CategoryRequest(BaseModel):
 
 @router.get("")
 async def list_categories(
+    group_id: int | None = Query(default=None, alias="groupId"),
+    target_user_id: int | None = Query(default=None, alias="userId"),
     user_id: int = Depends(require_access_token),
     session: AsyncSession = Depends(get_session),
 ):
-    return await categories_service.list_categories(session, user_id)
+    return await categories_service.list_categories(session, user_id, target_user_id, group_id)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

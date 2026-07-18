@@ -77,6 +77,17 @@ async def get_invite_code(session: AsyncSession, group_id: int, user_id: int) ->
     return {"groupId": group.id, "inviteCode": group.invite_code}
 
 
+async def require_shared_group_membership(session: AsyncSession, group_id: int, requester_id: int, target_user_id: int) -> None:
+    member_count = await session.scalar(
+        select(func.count(func.distinct(GroupMember.user_id))).where(
+            GroupMember.group_id == group_id,
+            GroupMember.user_id.in_([requester_id, target_user_id]),
+        )
+    )
+    if member_count != 2:
+        raise HTTPException(status_code=403, detail={"message": "요청자와 대상 사용자가 모두 해당 그룹의 멤버여야 합니다."})
+
+
 async def remove_member(session: AsyncSession, group_id: int, user_id: int, request_user_id: int) -> dict:
     group = await session.get(Group, group_id)
     if group is None:

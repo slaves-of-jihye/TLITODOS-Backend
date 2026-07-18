@@ -2,11 +2,24 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.groups_service import require_shared_group_membership
 from app.infrastructure.database import Category, category_to_response
 
 
-async def list_categories(session: AsyncSession, user_id: int) -> list[dict]:
-    categories = await session.scalars(select(Category).where(Category.user_id == user_id).order_by(Category.id))
+async def list_categories(
+    session: AsyncSession,
+    requester_id: int,
+    target_user_id: int | None,
+    group_id: int | None,
+) -> list[dict]:
+    owner_id = target_user_id if target_user_id is not None else requester_id
+
+    if owner_id != requester_id:
+        if group_id is None:
+            raise HTTPException(status_code=400, detail={"message": "다른 사용자의 카테고리를 조회하려면 groupId가 필요합니다."})
+        await require_shared_group_membership(session, group_id, requester_id, owner_id)
+
+    categories = await session.scalars(select(Category).where(Category.user_id == owner_id).order_by(Category.id))
     return [category_to_response(category) for category in categories]
 
 
