@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -18,6 +19,19 @@ from app.presentation.v1.todos.todos_controller import router as todos_router
 
 Path("uploads").mkdir(exist_ok=True)
 
+DEFAULT_CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://tlitodos.vercel.app",
+]
+
+
+def cors_origins() -> list[str]:
+    extra_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
+    return DEFAULT_CORS_ORIGINS + extra_origins
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -29,7 +43,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="TLITODOS Backend", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_origins=cors_origins(),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
