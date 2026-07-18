@@ -10,6 +10,7 @@ https://www.notion.so/api-34d4deccb21e8024a8e1db08cf2a2f01
 
 # CI/CD
 Jenkins 파이프라인(`deploy/Jenkinsfile`)은 master 브랜치 push 시 compose up을 트리거합니다.
+(2026-07-18 파이프라인 트리거 재확인)
 
 # Folder Structure
 ## Presentation
