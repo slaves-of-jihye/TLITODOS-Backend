@@ -2,6 +2,7 @@ import pytest
 import pytest_asyncio
 from fastapi import Header
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import event
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.ext.compiler import compiles
@@ -24,6 +25,11 @@ async def engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    @event.listens_for(test_engine.sync_engine, "connect")
+    def _enable_foreign_keys(dbapi_connection, connection_record):
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
     async with test_engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
     yield test_engine
@@ -64,8 +70,8 @@ def auth_headers(user_id: int) -> dict:
     return {"X-Test-User-Id": str(user_id)}
 
 
-async def make_user(db, user_id: int, name: str = "user") -> User:
-    user = User(id=user_id, name=name)
+async def make_user(db, user_id: int, name: str = "user", bio: str = "") -> User:
+    user = User(id=user_id, name=name, bio=bio)
     db.add(user)
     await db.commit()
     return user

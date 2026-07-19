@@ -71,3 +71,21 @@ async def remove_member(
     session: AsyncSession = Depends(get_session),
 ):
     return await groups_service.remove_member(session, groupId, userId, request_user_id)
+
+
+@router.post("/{groupId}/leave")
+async def leave_group(
+    groupId: int,
+    user_id: int = Depends(require_access_token),
+    session: AsyncSession = Depends(get_session),
+):
+    return await groups_service.leave_group(session, groupId, user_id)
+
+
+@router.delete("/{groupId}")
+async def delete_group(
+    groupId: int,
+    user_id: int = Depends(require_access_token),
+    session: AsyncSession = Depends(get_session),
+):
+    return await groups_service.delete_group(session, groupId, user_id)

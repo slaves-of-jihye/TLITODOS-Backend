@@ -61,7 +61,13 @@ async def get_group(session: AsyncSession, group_id: int, user_id: int) -> dict:
         "description": group.description,
         "inviteCode": group.invite_code,
         "members": [
-            {"userId": user.id, "name": user.name, "profileImageUrl": user.profile_image_url, "role": role}
+            {
+                "userId": user.id,
+                "name": user.name,
+                "profileImageUrl": user.profile_image_url,
+                "bio": user.bio,
+                "role": role,
+            }
             for user, role in result.all()
         ],
     }
@@ -86,6 +92,32 @@ async def require_shared_group_membership(session: AsyncSession, group_id: int, 
     )
     if member_count != 2:
         raise HTTPException(status_code=403, detail={"message": "요청자와 대상 사용자가 모두 해당 그룹의 멤버여야 합니다."})
+
+
+async def leave_group(session: AsyncSession, group_id: int, user_id: int) -> dict:
+    group = await session.get(Group, group_id)
+    if group is None:
+        raise HTTPException(status_code=404, detail={"message": "존재하지 않는 그룹입니다."})
+    membership = await session.scalar(select(GroupMember).where(GroupMember.group_id == group_id, GroupMember.user_id == user_id))
+    if membership is None:
+        raise HTTPException(status_code=404, detail={"message": "그룹의 멤버가 아닙니다."})
+    if membership.role == "LEADER":
+        raise HTTPException(status_code=400, detail={"message": "그룹장은 그룹을 나갈 수 없습니다. 그룹 삭제 기능을 이용해주세요."})
+    await session.delete(membership)
+    await session.commit()
+    return {"success": True, "message": "그룹에서 나갔습니다."}
+
+
+async def delete_group(session: AsyncSession, group_id: int, user_id: int) -> dict:
+    group = await session.get(Group, group_id)
+    if group is None:
+        raise HTTPException(status_code=404, detail={"message": "존재하지 않는 그룹입니다."})
+    membership = await session.scalar(select(GroupMember).where(GroupMember.group_id == group_id, GroupMember.user_id == user_id))
+    if membership is None or membership.role != "LEADER":
+        raise HTTPException(status_code=403, detail={"message": "그룹을 삭제할 권한(그룹장)이 없습니다."})
+    await session.delete(group)
+    await session.commit()
+    return {"success": True, "message": "그룹이 삭제되었습니다."}
 
 
 async def remove_member(session: AsyncSession, group_id: int, user_id: int, request_user_id: int) -> dict:
