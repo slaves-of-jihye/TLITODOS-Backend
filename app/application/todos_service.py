@@ -98,6 +98,14 @@ async def complete_todo(session: AsyncSession, todo_id: int, user_id: int) -> di
     return {"success": True, "todoId": todo_id, "isCompleted": True}
 
 
+async def uncomplete_todo(session: AsyncSession, todo_id: int, user_id: int) -> dict:
+    todo = await find_todo(session, todo_id, user_id)
+    todo.is_completed = False
+    todo.completed_at = None
+    await session.commit()
+    return {"success": True, "todoId": todo_id, "isCompleted": False}
+
+
 async def create_dependency(session: AsyncSession, todo_id: int, payload, user_id: int) -> dict:
     todo = await find_todo(session, todo_id, user_id)
     dependency = await find_todo(session, payload.dependency_todo_id, user_id)

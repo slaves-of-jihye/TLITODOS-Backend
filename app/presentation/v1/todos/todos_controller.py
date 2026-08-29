@@ -108,6 +108,15 @@ async def complete_todo(
     return await todos_service.complete_todo(session, todoId, user_id)
 
 
+@router.patch("/{todoId}/uncomplete")
+async def uncomplete_todo(
+    todoId: int,
+    user_id: int = Depends(require_access_token),
+    session: AsyncSession = Depends(get_session),
+):
+    return await todos_service.uncomplete_todo(session, todoId, user_id)
+
+
 @router.post("/{todoId}/dependencies", status_code=status.HTTP_201_CREATED)
 async def create_dependency(
     todoId: int,
