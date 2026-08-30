@@ -1,0 +1,9 @@
+DEFAULT_FONT = "KYOBO_HANDWRITING_2019"
+
+SUPPORTED_FONTS = frozenset(
+    {
+        DEFAULT_FONT,
+        "PRETENDARD",
+        "NANUM_SQUARE_ROUND",
+    }
+)

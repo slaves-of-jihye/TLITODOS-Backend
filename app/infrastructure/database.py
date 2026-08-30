@@ -11,6 +11,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from app.shared.fonts import DEFAULT_FONT
+
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
@@ -37,6 +39,7 @@ class User(Base):
     is_discord_linked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     discord_alert_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     discord_username: Mapped[str | None] = mapped_column(String(120))
+    font: Mapped[str] = mapped_column(String(32), default=DEFAULT_FONT, nullable=False)
 
 
 class AuthToken(Base):
@@ -144,6 +147,9 @@ async def init_db() -> None:
         await connection.run_sync(Base.metadata.create_all)
         await connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub VARCHAR(255)"))
         await connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255)"))
+        await connection.execute(
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS font VARCHAR(32) NOT NULL DEFAULT 'KYOBO_HANDWRITING_2019'")
+        )
         await connection.execute(text("ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP"))
         await connection.execute(text("ALTER TABLE auth_tokens ALTER COLUMN token TYPE VARCHAR(512)"))
         await connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_google_sub_unique ON users (google_sub) WHERE google_sub IS NOT NULL"))
@@ -210,6 +216,7 @@ def user_to_response(user: User) -> dict:
         "name": user.name,
         "profileImageUrl": user.profile_image_url,
         "bio": user.bio,
+        "font": user.font,
         "isDiscordLinked": user.is_discord_linked,
         "discordAlertEnabled": user.discord_alert_enabled,
     }

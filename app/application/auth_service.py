@@ -142,6 +142,13 @@ async def update_notifications(session: AsyncSession, user_id: int, discord_aler
     return {"success": True, "discordAlertEnabled": user.discord_alert_enabled}
 
 
+async def update_font(session: AsyncSession, user_id: int, font: str) -> dict:
+    user = await session.get(User, user_id)
+    user.font = font
+    await session.commit()
+    return {"success": True, "font": user.font}
+
+
 async def link_discord(session: AsyncSession, user_id: int, discord_auth_code: str) -> dict:
     discord_user = await fetch_discord_user(discord_auth_code)
     user = await session.get(User, user_id)
