@@ -148,8 +148,9 @@ async def init_db() -> None:
         await connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub VARCHAR(255)"))
         await connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255)"))
         await connection.execute(
-            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS font VARCHAR(32) NOT NULL DEFAULT 'KYOBO_HANDWRITING_2019'")
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS font VARCHAR(32) NOT NULL DEFAULT 'PRETENDARD'")
         )
+        await connection.execute(text("ALTER TABLE users ALTER COLUMN font SET DEFAULT 'PRETENDARD'"))
         await connection.execute(text("ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP"))
         await connection.execute(text("ALTER TABLE auth_tokens ALTER COLUMN token TYPE VARCHAR(512)"))
         await connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_google_sub_unique ON users (google_sub) WHERE google_sub IS NOT NULL"))

@@ -1,4 +1,6 @@
-from app.shared.fonts import DEFAULT_FONT
+import pytest
+
+from app.shared.fonts import DEFAULT_FONT, SUPPORTED_FONTS
 from tests.conftest import auth_headers, make_user
 
 
@@ -11,19 +13,20 @@ async def test_get_me_returns_default_font(client, db):
     assert response.json()["font"] == DEFAULT_FONT
 
 
-async def test_update_font_saves_supported_font(client, db):
+@pytest.mark.parametrize("font", sorted(SUPPORTED_FONTS))
+async def test_update_font_saves_supported_font(client, db, font):
     user = await make_user(db, 1, "user")
 
     response = await client.patch(
         "/api/v1/users/me/font",
-        json={"font": "PRETENDARD"},
+        json={"font": font},
         headers=auth_headers(1),
     )
 
     assert response.status_code == 200
-    assert response.json() == {"success": True, "font": "PRETENDARD"}
+    assert response.json() == {"success": True, "font": font}
     await db.refresh(user)
-    assert user.font == "PRETENDARD"
+    assert user.font == font
 
 
 async def test_update_font_rejects_unsupported_font(client, db):
