@@ -1,9 +1,45 @@
+import heapq
+
 from fastapi import HTTPException
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.groups_service import require_shared_group_membership
 from app.infrastructure.database import Bet, Category, Todo, bet_to_response, todo_to_response
+
+
+def sort_todos_by_dependencies(todos: list[Todo]) -> list[Todo]:
+    todos_by_id = {todo.id: todo for todo in todos}
+    indegree = {todo.id: 0 for todo in todos}
+    dependents = {todo.id: [] for todo in todos}
+
+    for todo in todos:
+        dependency_ids = {
+            dependency_id
+            for dependency_id in todo.dependencies
+            if dependency_id in todos_by_id and dependency_id != todo.id
+        }
+        indegree[todo.id] = len(dependency_ids)
+        for dependency_id in dependency_ids:
+            dependents[dependency_id].append(todo.id)
+
+    ready = [todo_id for todo_id, degree in indegree.items() if degree == 0]
+    heapq.heapify(ready)
+    sorted_ids = []
+
+    while ready:
+        todo_id = heapq.heappop(ready)
+        sorted_ids.append(todo_id)
+        for dependent_id in dependents[todo_id]:
+            indegree[dependent_id] -= 1
+            if indegree[dependent_id] == 0:
+                heapq.heappush(ready, dependent_id)
+
+    if len(sorted_ids) != len(todos):
+        sorted_id_set = set(sorted_ids)
+        sorted_ids.extend(todo.id for todo in todos if todo.id not in sorted_id_set)
+
+    return [todos_by_id[todo_id] for todo_id in sorted_ids]
 
 
 async def find_todo(session: AsyncSession, todo_id: int, user_id: int) -> Todo:
@@ -59,8 +95,8 @@ async def list_todos(
         statement = statement.where(Todo.group_id == group_id)
     if date is not None:
         statement = statement.where(or_(Todo.due_date == date, Todo.due_date.is_(None)))
-    todos = await session.scalars(statement.order_by(Todo.id))
-    return [todo_to_response(todo) for todo in todos]
+    todos = list((await session.scalars(statement.order_by(Todo.id))).all())
+    return [todo_to_response(todo) for todo in sort_todos_by_dependencies(todos)]
 
 
 async def update_todo(session: AsyncSession, todo_id: int, payload, user_id: int) -> dict:
