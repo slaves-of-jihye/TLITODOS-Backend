@@ -6,7 +6,6 @@ from fastapi import HTTPException
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.groups_service import require_shared_group_membership
 from app.infrastructure.database import Bet, Category, Todo, bet_to_response, todo_to_response
 
 
@@ -62,8 +61,6 @@ async def create_todo(session: AsyncSession, payload, user_id: int) -> dict:
         importance=payload.importance,
         hardship=payload.hardship,
         due_date=payload.due_date,
-        visibility=payload.visibility,
-        group_id=payload.group_id,
         x=payload.x,
         y=payload.y,
         is_routine=payload.is_routine,
@@ -80,21 +77,11 @@ async def list_todos(
     session: AsyncSession,
     requester_id: int,
     target_user_id: int | None,
-    group_id: int | None,
     date: str | None,
 ) -> list[dict]:
     owner_id = target_user_id if target_user_id is not None else requester_id
 
-    if owner_id != requester_id:
-        if group_id is None:
-            raise HTTPException(status_code=400, detail={"message": "다른 사용자의 할일을 조회하려면 groupId가 필요합니다."})
-        await require_shared_group_membership(session, group_id, requester_id, owner_id)
-
     statement = select(Todo).where(Todo.user_id == owner_id)
-    if owner_id != requester_id:
-        statement = statement.where(Todo.visibility.in_(["GROUP", "PUBLIC"]))
-    if group_id is not None:
-        statement = statement.where(Todo.group_id == group_id)
     if date is not None:
         statement = statement.where(or_(Todo.due_date == date, Todo.due_date.is_(None)))
     todos = list((await session.scalars(statement.order_by(Todo.id))).all())
@@ -144,7 +131,7 @@ async def list_daily_todo_statuses(session: AsyncSession, user_id: int, month: s
 async def update_todo(session: AsyncSession, todo_id: int, payload, user_id: int) -> dict:
     todo = await find_todo(session, todo_id, user_id)
     updates = payload.model_dump(by_alias=True, exclude_unset=True)
-    field_map = {"categoryId": "category_id", "dueDate": "due_date", "groupId": "group_id"}
+    field_map = {"categoryId": "category_id", "dueDate": "due_date"}
     for key, value in updates.items():
         setattr(todo, field_map.get(key, key), value)
     await session.commit()

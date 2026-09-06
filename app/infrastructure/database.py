@@ -97,12 +97,10 @@ class Todo(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id", ondelete="RESTRICT"), index=True)
-    group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id", ondelete="SET NULL"), index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     importance: Mapped[str] = mapped_column(String(20), default="NONE", nullable=False)
     hardship: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     due_date: Mapped[str | None] = mapped_column(String(40))
-    visibility: Mapped[str] = mapped_column(String(20), default="PRIVATE", nullable=False)
     x: Mapped[float] = mapped_column(Float, default=0, nullable=False)
     y: Mapped[float] = mapped_column(Float, default=0, nullable=False)
     is_routine: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -151,6 +149,8 @@ async def init_db() -> None:
             text("ALTER TABLE users ADD COLUMN IF NOT EXISTS font VARCHAR(32) NOT NULL DEFAULT 'PRETENDARD'")
         )
         await connection.execute(text("ALTER TABLE users ALTER COLUMN font SET DEFAULT 'PRETENDARD'"))
+        await connection.execute(text("ALTER TABLE todos DROP COLUMN IF EXISTS group_id"))
+        await connection.execute(text("ALTER TABLE todos DROP COLUMN IF EXISTS visibility"))
         await connection.execute(text("ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP"))
         await connection.execute(text("ALTER TABLE auth_tokens ALTER COLUMN token TYPE VARCHAR(512)"))
         await connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_google_sub_unique ON users (google_sub) WHERE google_sub IS NOT NULL"))
@@ -241,8 +241,6 @@ def todo_to_response(todo: Todo) -> dict:
         "importance": todo.importance,
         "hardship": todo.hardship,
         "dueDate": todo.due_date,
-        "visibility": todo.visibility,
-        "groupId": todo.group_id,
         "x": todo.x,
         "y": todo.y,
         "isRoutine": todo.is_routine,

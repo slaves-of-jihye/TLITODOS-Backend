@@ -18,8 +18,6 @@ class TodoCreateRequest(BaseModel):
     importance: Literal["NONE", "LOW", "HIGH"] = "NONE"
     hardship: int = Field(default=1, ge=1, le=5)
     due_date: str | None = Field(default=None, alias="dueDate")
-    visibility: Literal["PRIVATE", "GROUP", "PUBLIC"] = "PRIVATE"
-    group_id: int | None = Field(default=None, alias="groupId")
     x: float = 0
     y: float = 0
     is_routine: bool = Field(default=False, alias="isRoutine")
@@ -31,8 +29,6 @@ class TodoPatchRequest(BaseModel):
     importance: Literal["NONE", "LOW", "HIGH"] | None = None
     hardship: int | None = Field(default=None, ge=1, le=5)
     due_date: str | None = Field(default=None, alias="dueDate")
-    visibility: Literal["PRIVATE", "GROUP", "PUBLIC"] | None = None
-    group_id: int | None = Field(default=None, alias="groupId")
     x: float | None = None
     y: float | None = None
 
@@ -61,13 +57,12 @@ async def create_todo(
 
 @router.get("")
 async def list_todos(
-    group_id: int | None = Query(default=None, alias="groupId"),
     date: str | None = None,
     target_user_id: int | None = Query(default=None, alias="userId"),
     user_id: int = Depends(require_access_token),
     session: AsyncSession = Depends(get_session),
 ):
-    return await todos_service.list_todos(session, user_id, target_user_id, group_id, date)
+    return await todos_service.list_todos(session, user_id, target_user_id, date)
 
 
 @router.get("/daily-status")
