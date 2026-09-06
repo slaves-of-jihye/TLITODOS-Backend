@@ -70,6 +70,15 @@ async def list_todos(
     return await todos_service.list_todos(session, user_id, target_user_id, group_id, date)
 
 
+@router.get("/daily-status")
+async def list_daily_todo_statuses(
+    month: str = Query(pattern=r"^[0-9]{4}-(0[1-9]|1[0-2])$"),
+    user_id: int = Depends(require_access_token),
+    session: AsyncSession = Depends(get_session),
+):
+    return await todos_service.list_daily_todo_statuses(session, user_id, month)
+
+
 @router.patch("/{todoId}")
 async def update_todo(
     todoId: int,

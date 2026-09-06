@@ -1,4 +1,6 @@
 import heapq
+from calendar import monthrange
+from datetime import date
 
 from fastapi import HTTPException
 from sqlalchemy import or_, select
@@ -97,6 +99,46 @@ async def list_todos(
         statement = statement.where(or_(Todo.due_date == date, Todo.due_date.is_(None)))
     todos = list((await session.scalars(statement.order_by(Todo.id))).all())
     return [todo_to_response(todo) for todo in sort_todos_by_dependencies(todos)]
+
+
+async def list_daily_todo_statuses(session: AsyncSession, user_id: int, month: str) -> list[dict]:
+    try:
+        first_day = date.fromisoformat(f"{month}-01")
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail={"message": "month는 YYYY-MM 형식이어야 합니다."}) from error
+
+    last_day = monthrange(first_day.year, first_day.month)[1]
+    dates = [date(first_day.year, first_day.month, day).isoformat() for day in range(1, last_day + 1)]
+    statuses_by_date = {
+        due_date: {"incompleteCount": 0, "categoryStatuses": {}}
+        for due_date in dates
+    }
+
+    todos = await session.scalars(
+        select(Todo)
+        .where(Todo.user_id == user_id, Todo.due_date.like(f"{month}-%"))
+        .order_by(Todo.id)
+    )
+    for todo in todos:
+        if todo.due_date not in statuses_by_date:
+            continue
+        daily_status = statuses_by_date[todo.due_date]
+        if not todo.is_completed:
+            daily_status["incompleteCount"] += 1
+        category_statuses = daily_status["categoryStatuses"]
+        category_statuses[todo.category_id] = category_statuses.get(todo.category_id, True) and todo.is_completed
+
+    return [
+        {
+            "date": due_date,
+            "incompleteCount": statuses_by_date[due_date]["incompleteCount"],
+            "categoryStatuses": [
+                {"categoryId": category_id, "isCompleted": is_completed}
+                for category_id, is_completed in sorted(statuses_by_date[due_date]["categoryStatuses"].items())
+            ],
+        }
+        for due_date in dates
+    ]
 
 
 async def update_todo(session: AsyncSession, todo_id: int, payload, user_id: int) -> dict:
