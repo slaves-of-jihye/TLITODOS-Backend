@@ -103,16 +103,12 @@ async def make_todo(
     db,
     user_id: int,
     category_id: int,
-    visibility: str = "PRIVATE",
-    group_id: int | None = None,
     title: str = "todo",
 ) -> Todo:
     todo = Todo(
         user_id=user_id,
         category_id=category_id,
-        group_id=group_id,
         title=title,
-        visibility=visibility,
         subtasks=[],
         dependencies=[],
     )
