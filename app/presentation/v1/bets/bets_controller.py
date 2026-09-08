@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application import bets_service
 from app.infrastructure.database import get_session
+from app.presentation.v1.responses import BetResponse
 from app.shared.auth import require_access_token
-
 
 router = APIRouter(prefix="/api/v1/bets", tags=["bets"])
 
@@ -20,7 +20,21 @@ class BetVerifyRequest(BaseModel):
     approved: bool = True
 
 
-@router.patch("/{betId}/status")
+@router.get("", response_model=list[BetResponse])
+async def list_bets(user_id: int = Depends(require_access_token), session: AsyncSession = Depends(get_session)):
+    return await bets_service.list_bets(session, user_id)
+
+
+@router.get("/{betId}", response_model=BetResponse)
+async def get_bet(
+    betId: int, user_id: int = Depends(require_access_token), session: AsyncSession = Depends(get_session)
+):
+    from app.infrastructure.database import bet_to_response
+
+    return bet_to_response(await bets_service.find_bet(session, betId, user_id, role="participant"))
+
+
+@router.patch("/{betId}/status", response_model=BetResponse)
 async def update_bet_status(
     betId: int,
     payload: BetStatusRequest,
@@ -44,7 +58,7 @@ async def upload_bet_proof(
         raise HTTPException(status_code=400, detail={"message": "multipart/form-data로 이미지 파일을 첨부해야 합니다."})
 
 
-@router.patch("/{betId}/verify")
+@router.patch("/{betId}/verify", response_model=BetResponse)
 async def verify_bet(
     betId: int,
     payload: BetVerifyRequest,

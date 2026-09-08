@@ -1,4 +1,10 @@
-from tests.conftest import add_member, auth_headers, make_category, make_group, make_user
+from tests.conftest import (
+    add_member,
+    auth_headers,
+    make_category,
+    make_group,
+    make_user,
+)
 
 
 async def test_list_categories_defaults_to_own_categories(client, db):
@@ -12,13 +18,13 @@ async def test_list_categories_defaults_to_own_categories(client, db):
     assert names == ["mine"]
 
 
-async def test_list_categories_other_user_without_group_id_returns_400(client, db):
+async def test_public_categories_do_not_require_group_id(client, db):
     await make_user(db, 1, "requester")
     await make_user(db, 2, "target")
 
     response = await client.get("/api/v1/categories", params={"userId": 2}, headers=auth_headers(1))
 
-    assert response.status_code == 400
+    assert response.status_code == 200
 
 
 async def test_list_categories_other_user_not_shared_group_returns_403(client, db):

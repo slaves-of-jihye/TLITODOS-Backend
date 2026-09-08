@@ -1,0 +1,78 @@
+from fastapi import HTTPException
+from sqlalchemy import or_, select
+
+from app.infrastructure.database import (
+    Bet,
+    Diary,
+    GroupMember,
+    Notification,
+    Todo,
+    User,
+    bet_to_response,
+)
+from app.shared.scheduling import utcnow
+
+
+def peer_ids(user_id):
+    groups = select(GroupMember.group_id).where(GroupMember.user_id == user_id)
+    return (
+        select(GroupMember.user_id).where(GroupMember.group_id.in_(groups), GroupMember.user_id != user_id).distinct()
+    )
+
+
+async def notify_peers(session, actor_id, notification_type, event_key, **references):
+    for recipient in await session.scalars(peer_ids(actor_id)):
+        session.add(
+            Notification(
+                recipient_id=recipient, actor_id=actor_id, type=notification_type, event_key=event_key, **references
+            )
+        )
+
+
+async def list_notifications(session, user_id, kind=None, cursor=None, limit=30):
+    # Recheck membership and diary visibility at read time (including old events).
+    statement = (
+        select(Notification, User, Todo, Diary, Bet)
+        .join(User, Notification.actor_id == User.id)
+        .outerjoin(Todo, Notification.todo_id == Todo.id)
+        .outerjoin(Diary, Notification.diary_id == Diary.id)
+        .outerjoin(Bet, Notification.bet_id == Bet.id)
+        .where(
+            Notification.recipient_id == user_id,
+            or_(Notification.type == "BET_REQUESTED", Notification.actor_id.in_(peer_ids(user_id))),
+            or_(Notification.diary_id.is_(None), Diary.visibility == "PUBLIC"),
+        )
+    )
+    if kind:
+        statement = statement.where(Notification.type == kind)
+    if cursor is not None:
+        statement = statement.where(Notification.id < cursor)
+    rows = (await session.execute(statement.order_by(Notification.id.desc()).limit(limit + 1))).all()
+    items = []
+    for notification, actor, todo, diary, bet in rows[:limit]:
+        items.append(
+            {
+                "notificationId": notification.id,
+                "type": notification.type,
+                "actor": {"userId": actor.id, "name": actor.name, "profileImageUrl": actor.profile_image_url},
+                "todo": {"todoId": todo.id, "title": todo.title, "description": todo.description} if todo else None,
+                "diaryId": diary.id if diary else None,
+                "bet": bet_to_response(bet) if bet else None,
+                "createdAt": notification.created_at.isoformat(),
+                "readAt": notification.read_at.isoformat() if notification.read_at else None,
+            }
+        )
+    return {"items": items, "nextCursor": items[-1]["notificationId"] if len(rows) > limit else None}
+
+
+async def read_notification(session, notification_id, user_id):
+    notification = await session.scalar(
+        select(Notification)
+        .where(Notification.id == notification_id, Notification.recipient_id == user_id)
+        .with_for_update()
+    )
+    if notification is None:
+        raise HTTPException(404, detail={"message": "존재하지 않는 알림입니다."})
+    notification.read_at = notification.read_at or utcnow()
+    await session.commit()
+    return {"success": True, "notificationId": notification.id, "readAt": notification.read_at.isoformat()}

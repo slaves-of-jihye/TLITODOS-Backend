@@ -1,18 +1,29 @@
 from fastapi import APIRouter, Depends, Query, status
-from pydantic import BaseModel, Field
+from pydantic import Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application import categories_service
 from app.infrastructure.database import get_session
 from app.shared.auth import require_access_token
-
+from app.shared.scheduling import RequestModel
 
 router = APIRouter(prefix="/api/v1/categories", tags=["categories"])
 
 
-class CategoryRequest(BaseModel):
-    name: str = Field(min_length=1)
+class CategoryRequest(RequestModel):
+    name: str = Field(min_length=1, max_length=80, pattern=r"\S")
     color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
+class CategoryPatchRequest(RequestModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80, pattern=r"\S")
+    color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+
+    @model_validator(mode="after")
+    def no_null(self):
+        if any(getattr(self, key) is None for key in self.model_fields_set):
+            raise ValueError("이름과 색상은 null일 수 없습니다.")
+        return self
 
 
 @router.get("")
@@ -37,7 +48,7 @@ async def create_category(
 @router.patch("/{categoryId}")
 async def update_category(
     categoryId: int,
-    payload: CategoryRequest,
+    payload: CategoryPatchRequest,
     user_id: int = Depends(require_access_token),
     session: AsyncSession = Depends(get_session),
 ):
