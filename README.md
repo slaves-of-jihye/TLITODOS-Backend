@@ -8,6 +8,10 @@
 # API Specification
 https://www.notion.so/api-34d4deccb21e8024a8e1db08cf2a2f01
 
+- [Figma 화면 기준 백엔드 계약 및 배포 주의사항](docs/figma-backend-contract.md)
+- [루틴 반복 규칙 / 단일 요청 / JS 연동](docs/routines.md)
+- [OpenAPI](docs/openapi.json): `uv run python -m scripts.export_openapi`로 재생성
+
 # CI/CD
 Jenkins 파이프라인(`deploy/Jenkinsfile`)은 master 브랜치 push 시 compose up을 트리거합니다.
 (2026-07-18 파이프라인 트리거 재확인)

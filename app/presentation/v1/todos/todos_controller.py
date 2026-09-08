@@ -1,40 +1,48 @@
-from typing import Literal
+from datetime import date as CalendarDate
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application import todos_service
 from app.infrastructure.database import get_session
+from app.presentation.v1.responses import BetResponse, DailyStatusResponse, TodoResponse
 from app.shared.auth import require_access_token
-
+from app.shared.scheduling import RequestModel, TimedRequest
 
 router = APIRouter(prefix="/api/v1/todos", tags=["todos"])
 
 
-class TodoCreateRequest(BaseModel):
-    title: str = Field(min_length=1)
+class TodoCreateRequest(TimedRequest):
+    title: str = Field(min_length=1, max_length=40, pattern=r"\S")
+    description: str = Field(default="", max_length=100)
     category_id: int = Field(alias="categoryId")
     importance: Literal["NONE", "LOW", "HIGH"] = "NONE"
     hardship: int = Field(default=1, ge=1, le=5)
-    due_date: str | None = Field(default=None, alias="dueDate")
-    visibility: Literal["PRIVATE", "GROUP", "PUBLIC"] = "PRIVATE"
-    group_id: int | None = Field(default=None, alias="groupId")
-    x: float = 0
-    y: float = 0
-    is_routine: bool = Field(default=False, alias="isRoutine")
+    start_date: CalendarDate | None = Field(default=None, alias="startDate")
+    due_date: CalendarDate | None = Field(default=None, alias="dueDate")
+    x: float = Field(default=0, allow_inf_nan=False)
+    y: float = Field(default=0, allow_inf_nan=False)
 
 
-class TodoPatchRequest(BaseModel):
-    title: str | None = None
+class TodoPatchRequest(TimedRequest):
+    title: str | None = Field(default=None, min_length=1, max_length=40, pattern=r"\S")
+    description: str | None = Field(default=None, max_length=100)
     category_id: int | None = Field(default=None, alias="categoryId")
     importance: Literal["NONE", "LOW", "HIGH"] | None = None
     hardship: int | None = Field(default=None, ge=1, le=5)
-    due_date: str | None = Field(default=None, alias="dueDate")
-    visibility: Literal["PRIVATE", "GROUP", "PUBLIC"] | None = None
-    group_id: int | None = Field(default=None, alias="groupId")
-    x: float | None = None
-    y: float | None = None
+    start_date: CalendarDate | None = Field(default=None, alias="startDate")
+    due_date: CalendarDate | None = Field(default=None, alias="dueDate")
+    x: float | None = Field(default=None, allow_inf_nan=False)
+    y: float | None = Field(default=None, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def no_null_values(self):
+        for key in self.model_fields_set - {"due_date", "time"}:
+            if getattr(self, key) is None:
+                raise ValueError(f"{key}는 null일 수 없습니다.")
+        return self
 
 
 class SubtaskCreateRequest(BaseModel):
@@ -45,12 +53,17 @@ class DependencyCreateRequest(BaseModel):
     dependency_todo_id: int = Field(alias="dependencyTodoId")
 
 
-class BetCreateRequest(BaseModel):
-    content: str = Field(min_length=1)
-    requester_id: int = Field(alias="requesterId")
+class BetCreateRequest(RequestModel):
+    content: str = Field(min_length=1, max_length=1000, pattern=r"\S")
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+class DependenciesRequest(RequestModel):
+    dependency_todo_ids: list[Annotated[int, Field(strict=True, gt=0)]] = Field(
+        alias="dependencyTodoIds", max_length=100
+    )
+
+
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=TodoResponse)
 async def create_todo(
     payload: TodoCreateRequest,
     user_id: int = Depends(require_access_token),
@@ -59,10 +72,10 @@ async def create_todo(
     return await todos_service.create_todo(session, payload, user_id)
 
 
-@router.get("")
+@router.get("", response_model=list[TodoResponse])
 async def list_todos(
     group_id: int | None = Query(default=None, alias="groupId"),
-    date: str | None = None,
+    date: CalendarDate | None = None,
     target_user_id: int | None = Query(default=None, alias="userId"),
     user_id: int = Depends(require_access_token),
     session: AsyncSession = Depends(get_session),
@@ -70,16 +83,45 @@ async def list_todos(
     return await todos_service.list_todos(session, user_id, target_user_id, group_id, date)
 
 
-@router.get("/daily-status")
+@router.get("/daily-status", response_model=list[DailyStatusResponse])
 async def list_daily_todo_statuses(
     month: str = Query(pattern=r"^[0-9]{4}-(0[1-9]|1[0-2])$"),
+    target_user_id: int | None = Query(default=None, alias="userId"),
+    group_id: int | None = Query(default=None, alias="groupId"),
     user_id: int = Depends(require_access_token),
     session: AsyncSession = Depends(get_session),
 ):
-    return await todos_service.list_daily_todo_statuses(session, user_id, month)
+    return await todos_service.list_daily_todo_statuses(session, user_id, month, target_user_id, group_id)
 
 
-@router.patch("/{todoId}")
+@router.get("/{todoId}", response_model=TodoResponse)
+async def get_todo(
+    todoId: int, user_id: int = Depends(require_access_token), session: AsyncSession = Depends(get_session)
+):
+    return await todos_service.get_todo(session, todoId)
+
+
+@router.put("/{todoId}/dependencies")
+async def replace_dependencies(
+    todoId: int,
+    payload: DependenciesRequest,
+    user_id: int = Depends(require_access_token),
+    session: AsyncSession = Depends(get_session),
+):
+    return await todos_service.set_dependencies(session, todoId, payload.dependency_todo_ids, user_id)
+
+
+@router.delete("/{todoId}/dependencies/{dependencyTodoId}")
+async def remove_dependency(
+    todoId: int,
+    dependencyTodoId: int,
+    user_id: int = Depends(require_access_token),
+    session: AsyncSession = Depends(get_session),
+):
+    return await todos_service.remove_dependency(session, todoId, dependencyTodoId, user_id)
+
+
+@router.patch("/{todoId}", response_model=TodoResponse)
 async def update_todo(
     todoId: int,
     payload: TodoPatchRequest,
@@ -136,7 +178,7 @@ async def create_dependency(
     return await todos_service.create_dependency(session, todoId, payload, user_id)
 
 
-@router.post("/{todoId}/bets", status_code=status.HTTP_201_CREATED)
+@router.post("/{todoId}/bets", status_code=status.HTTP_201_CREATED, response_model=BetResponse)
 async def create_bet(
     todoId: int,
     payload: BetCreateRequest,

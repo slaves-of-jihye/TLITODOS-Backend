@@ -1,13 +1,18 @@
 import os
+from datetime import datetime
 
 import httpx
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from datetime import datetime
-
-from app.infrastructure.database import AuthToken, RefreshToken, User, ensure_user_defaults, user_to_response
+from app.infrastructure.database import (
+    AuthToken,
+    RefreshToken,
+    User,
+    ensure_user_defaults,
+    user_to_response,
+)
 from app.shared.tokens import create_access_token, create_refresh_token, hash_token
 from app.shared.uploads import save_upload
 
@@ -44,7 +49,9 @@ async def issue_token_pair(session: AsyncSession, user_id: int) -> dict:
 
 
 async def refresh_tokens(session: AsyncSession, refresh_token: str) -> dict:
-    stored_token = await session.scalar(select(RefreshToken).where(RefreshToken.token_hash == hash_token(refresh_token)))
+    stored_token = await session.scalar(
+        select(RefreshToken).where(RefreshToken.token_hash == hash_token(refresh_token))
+    )
     if stored_token is None or stored_token.revoked_at is not None or stored_token.expires_at <= datetime.utcnow():
         raise HTTPException(status_code=401, detail={"message": "유효하지 않거나 만료된 리프레시 토큰입니다."})
 
@@ -55,7 +62,9 @@ async def refresh_tokens(session: AsyncSession, refresh_token: str) -> dict:
 
 
 async def logout(session: AsyncSession, refresh_token: str) -> dict:
-    stored_token = await session.scalar(select(RefreshToken).where(RefreshToken.token_hash == hash_token(refresh_token)))
+    stored_token = await session.scalar(
+        select(RefreshToken).where(RefreshToken.token_hash == hash_token(refresh_token))
+    )
     if stored_token is not None and stored_token.revoked_at is None:
         stored_token.revoked_at = datetime.utcnow()
         await session.commit()
@@ -113,8 +122,7 @@ async def upsert_google_user(session: AsyncSession, profile: dict) -> User:
     else:
         user.google_sub = profile["googleSub"]
         user.email = profile.get("email") or user.email
-        user.name = profile["name"] or user.name
-        user.profile_image_url = profile.get("picture") or user.profile_image_url
+        # Subsequent logins must not overwrite the user's edited profile.
     return user
 
 
@@ -132,7 +140,7 @@ async def update_me(session: AsyncSession, user_id: int, updates: dict) -> dict:
         user.profile_image_url = updates["profileImageUrl"]
     await session.commit()
     await session.refresh(user)
-    return {"userId": user.id, "name": user.name, "profileImageUrl": user.profile_image_url, "bio": user.bio}
+    return user_to_response(user)
 
 
 async def update_notifications(session: AsyncSession, user_id: int, discord_alert_enabled: bool) -> dict:

@@ -14,9 +14,7 @@ async def list_categories(
 ) -> list[dict]:
     owner_id = target_user_id if target_user_id is not None else requester_id
 
-    if owner_id != requester_id:
-        if group_id is None:
-            raise HTTPException(status_code=400, detail={"message": "다른 사용자의 카테고리를 조회하려면 groupId가 필요합니다."})
+    if owner_id != requester_id and group_id is not None:
         await require_shared_group_membership(session, group_id, requester_id, owner_id)
 
     categories = await session.scalars(select(Category).where(Category.user_id == owner_id).order_by(Category.id))
@@ -38,8 +36,8 @@ async def update_category(session: AsyncSession, category_id: int, payload, user
     category = await session.scalar(select(Category).where(Category.id == category_id, Category.user_id == user_id))
     if category is None:
         raise HTTPException(status_code=404, detail={"message": "존재하지 않는 카테고리입니다."})
-    category.name = payload.name
-    category.color = payload.color
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(category, key, value)
     await session.commit()
     return {"categoryId": category.id, "name": category.name, "color": category.color}
 
@@ -50,6 +48,10 @@ async def delete_category(session: AsyncSession, category_id: int, user_id: int)
         raise HTTPException(status_code=404, detail={"message": "삭제할 카테고리를 찾을 수 없습니다."})
     if not category.is_deletable:
         raise HTTPException(status_code=400, detail={"message": "취미 카테고리는 삭제할 수 없습니다."})
+    from app.infrastructure.database import Todo
+
+    if await session.scalar(select(Todo.id).where(Todo.category_id == category_id).limit(1)) is not None:
+        raise HTTPException(409, detail={"message": "할일이 있는 카테고리는 먼저 할일을 이동하거나 삭제하세요."})
     await session.delete(category)
     await session.commit()
     return {"success": True, "message": "카테고리가 삭제되었습니다."}

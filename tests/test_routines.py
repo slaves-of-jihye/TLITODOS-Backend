@@ -13,8 +13,11 @@ async def setup_request(db):
     await make_user(db, 1)
     category = await make_category(db, 1)
     return {
-        "requestId": str(uuid4()), "title": "운동", "categoryId": category.id,
-        "startDate": "2026-09-01", "endDate": "2026-09-30",
+        "requestId": str(uuid4()),
+        "title": "운동",
+        "categoryId": category.id,
+        "startDate": "2026-09-01",
+        "endDate": "2026-09-30",
     }
 
 
@@ -69,17 +72,20 @@ async def test_cannot_use_other_users_category_or_change_their_occurrence(client
     assert (await client.patch(f"/api/v1/todos/{todo_id}/complete", headers=auth_headers(2))).status_code == 404
 
 
-@pytest.mark.parametrize("updates", [
-    {"endDate": "2026-08-31"},
-    {"endDate": "2027-09-02"},
-    {"startDate": "2026-02-30"},
-    {"weekdays": []},
-    {"weekdays": [0]},
-    {"weekdays": [8]},
-    {"weekdays": [True]},
-    {"startDate": "2026-09-07", "endDate": "2026-09-07", "weekdays": [2]},
-    {"requestId": "not-a-uuid"},
-])
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"endDate": "2026-08-31"},
+        {"endDate": "2030-09-02"},
+        {"startDate": "2026-02-30"},
+        {"weekdays": []},
+        {"weekdays": [0]},
+        {"weekdays": [8]},
+        {"weekdays": [True]},
+        {"startDate": "2026-09-07", "endDate": "2026-09-07", "weekdays": [2]},
+        {"requestId": "not-a-uuid"},
+    ],
+)
 async def test_invalid_routine_creates_nothing(client, db, updates):
     payload = await setup_request(db)
     payload.update(updates)
@@ -89,12 +95,15 @@ async def test_invalid_routine_creates_nothing(client, db, updates):
     assert await db.scalar(select(func.count(TodoRoutine.id))) == 0
 
 
-@pytest.mark.parametrize("start,end,count", [
-    ("2026-12-31", "2027-01-01", 2),
-    ("2028-02-28", "2028-03-01", 3),
-    ("2026-09-01", "2026-09-01", 1),
-    ("2028-01-01", "2028-12-31", 366),
-])
+@pytest.mark.parametrize(
+    "start,end,count",
+    [
+        ("2026-12-31", "2027-01-01", 2),
+        ("2028-02-28", "2028-03-01", 3),
+        ("2026-09-01", "2026-09-01", 1),
+        ("2028-01-01", "2028-12-31", 366),
+    ],
+)
 async def test_calendar_boundaries(client, db, start, end, count):
     payload = await setup_request(db)
     payload.update(startDate=start, endDate=end)
@@ -133,11 +142,14 @@ async def test_request_id_is_scoped_to_user(client, db):
     assert first.json()["routineId"] != second.json()["routineId"]
 
 
-@pytest.mark.parametrize("weekdays,expected", [
-    ([7], ["2026-08-30", "2026-09-06", "2026-09-13"]),
-    ([5], ["2026-08-28", "2026-09-04", "2026-09-11"]),
-    ([6, 7], ["2026-08-29", "2026-08-30", "2026-09-05", "2026-09-06", "2026-09-12", "2026-09-13"]),
-])
+@pytest.mark.parametrize(
+    "weekdays,expected",
+    [
+        ([7], ["2026-08-30", "2026-09-06", "2026-09-13"]),
+        ([5], ["2026-08-28", "2026-09-04", "2026-09-11"]),
+        ([6, 7], ["2026-08-29", "2026-08-30", "2026-09-05", "2026-09-06", "2026-09-12", "2026-09-13"]),
+    ],
+)
 async def test_weekly_routine_crosses_months_without_creating_other_days(client, db, weekdays, expected):
     payload = await setup_request(db)
     payload.update(startDate="2026-08-28", endDate="2026-09-13", weekdays=weekdays)
@@ -162,4 +174,22 @@ async def test_explicit_every_day_is_same_as_omitting_weekdays(client, db):
     retry = await client.post("/api/v1/todos/routines", json=payload, headers=auth_headers(1))
     assert retry.status_code == 201
     assert retry.json() == first.json()
+    assert await db.scalar(select(func.count(Todo.id))) == 30
+
+
+async def test_replays_definition_saved_by_previous_weekday_only_api(client, db):
+    payload = await setup_request(db)
+    result = await client.post("/api/v1/todos/routines", json=payload, headers=auth_headers(1))
+    routine = await db.get(TodoRoutine, result.json()["routineId"])
+    old = {
+        key: value
+        for key, value in routine.definition.items()
+        if key not in {"recurrence", "description", "time", "timezone"}
+    }
+    old["weekdays"] = list(range(1, 8))
+    routine.definition = old
+    await db.commit()
+    retry = await client.post("/api/v1/todos/routines", json=payload, headers=auth_headers(1))
+    assert retry.status_code == 201
+    assert retry.json() == result.json()
     assert await db.scalar(select(func.count(Todo.id))) == 30

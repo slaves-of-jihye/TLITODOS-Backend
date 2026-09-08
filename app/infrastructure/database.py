@@ -4,15 +4,30 @@ import os
 import secrets
 import string
 from collections.abc import AsyncGenerator
+from datetime import date as CalendarDate
 from datetime import datetime
+from datetime import time as ClockTime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func, select, text
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    Time,
+    UniqueConstraint,
+    func,
+    select,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.shared.fonts import DEFAULT_FONT
-
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
@@ -100,21 +115,27 @@ class TodoRoutine(Base):
     request_id: Mapped[str] = mapped_column(String(36), nullable=False)
     definition: Mapped[dict] = mapped_column(JSONB, nullable=False)
     creation_result: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
 
 class Todo(Base):
     __tablename__ = "todos"
+    __table_args__ = (UniqueConstraint("routine_id", "occurrence_date", name="uq_routine_occurrence"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id", ondelete="RESTRICT"), index=True)
     group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id", ondelete="SET NULL"), index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(String(100), default="", nullable=False)
+    start_date: Mapped[CalendarDate | None] = mapped_column(Date, index=True)
+    time: Mapped[ClockTime | None] = mapped_column(Time)
+    timezone: Mapped[str] = mapped_column(String(64), default="Asia/Seoul", nullable=False)
+    occurrence_date: Mapped[CalendarDate | None] = mapped_column(Date)
     importance: Mapped[str] = mapped_column(String(20), default="NONE", nullable=False)
     hardship: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     due_date: Mapped[str | None] = mapped_column(String(40))
-    visibility: Mapped[str] = mapped_column(String(20), default="PRIVATE", nullable=False)
     x: Mapped[float] = mapped_column(Float, default=0, nullable=False)
     y: Mapped[float] = mapped_column(Float, default=0, nullable=False)
     is_routine: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -147,6 +168,23 @@ class Diary(Base):
     image_url: Mapped[str | None] = mapped_column(String(500))
     emotion: Mapped[str | None] = mapped_column(String(40))
     visibility: Mapped[str] = mapped_column(String(20), default="PRIVATE", nullable=False)
+    date: Mapped[CalendarDate | None] = mapped_column(Date, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    __table_args__ = (UniqueConstraint("recipient_id", "event_key", name="uq_notification_event"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    recipient_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    type: Mapped[str] = mapped_column(String(30), nullable=False)
+    event_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    todo_id: Mapped[int | None] = mapped_column(ForeignKey("todos.id", ondelete="CASCADE"))
+    diary_id: Mapped[int | None] = mapped_column(ForeignKey("diaries.id", ondelete="CASCADE"))
+    bet_id: Mapped[int | None] = mapped_column(ForeignKey("bets.id", ondelete="CASCADE"))
+    read_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
 
@@ -157,9 +195,17 @@ async def get_session() -> AsyncGenerator[AsyncSession]:
 
 async def init_db() -> None:
     async with engine.begin() as connection:
+        await connection.execute(text("SELECT pg_advisory_xact_lock(74102918)"))
         await connection.run_sync(Base.metadata.create_all)
-        await connection.execute(text("ALTER TABLE todos ADD COLUMN IF NOT EXISTS routine_id INTEGER REFERENCES todo_routines(id) ON DELETE SET NULL"))
+        await connection.execute(
+            text(
+                "ALTER TABLE todos ADD COLUMN IF NOT EXISTS routine_id INTEGER REFERENCES todo_routines(id) ON DELETE SET NULL"
+            )
+        )
         await connection.execute(text("CREATE INDEX IF NOT EXISTS ix_todos_routine_id ON todos (routine_id)"))
+        from app.infrastructure.migrations import migrate_design_schema
+
+        await migrate_design_schema(connection)
         await connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub VARCHAR(255)"))
         await connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255)"))
         await connection.execute(
@@ -168,10 +214,17 @@ async def init_db() -> None:
         await connection.execute(text("ALTER TABLE users ALTER COLUMN font SET DEFAULT 'PRETENDARD'"))
         await connection.execute(text("ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP"))
         await connection.execute(text("ALTER TABLE auth_tokens ALTER COLUMN token TYPE VARCHAR(512)"))
-        await connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_google_sub_unique ON users (google_sub) WHERE google_sub IS NOT NULL"))
-        await connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_email_unique ON users (email) WHERE email IS NOT NULL"))
+        await connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_google_sub_unique ON users (google_sub) WHERE google_sub IS NOT NULL"
+            )
+        )
+        await connection.execute(
+            text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_email_unique ON users (email) WHERE email IS NOT NULL")
+        )
 
     async with SessionLocal() as session:
+        await session.execute(text("SELECT pg_advisory_xact_lock(74102918)"))
         if await session.get(User, 1) is None:
             session.add(
                 User(
@@ -187,9 +240,19 @@ async def init_db() -> None:
 
         await ensure_user_defaults(session, 1)
 
-        await session.execute(text("SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE((SELECT MAX(id) FROM users), 1), true)"))
-        await session.execute(text("SELECT setval(pg_get_serial_sequence('categories', 'id'), COALESCE((SELECT MAX(id) FROM categories), 1), true)"))
-        await session.execute(text("SELECT setval(pg_get_serial_sequence('groups', 'id'), COALESCE((SELECT MAX(id) FROM groups), 1), true)"))
+        await session.execute(
+            text("SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE((SELECT MAX(id) FROM users), 1), true)")
+        )
+        await session.execute(
+            text(
+                "SELECT setval(pg_get_serial_sequence('categories', 'id'), COALESCE((SELECT MAX(id) FROM categories), 1), true)"
+            )
+        )
+        await session.execute(
+            text(
+                "SELECT setval(pg_get_serial_sequence('groups', 'id'), COALESCE((SELECT MAX(id) FROM groups), 1), true)"
+            )
+        )
         await session.commit()
 
 
@@ -248,16 +311,21 @@ def category_to_response(category: Category) -> dict:
 
 
 def todo_to_response(todo: Todo) -> dict:
+    from app.shared.scheduling import todo_dates
+
+    start, _ = todo_dates(todo)
     return {
         "todoId": todo.id,
         "userId": todo.user_id,
         "title": todo.title,
+        "description": todo.description,
+        "startDate": start.isoformat(),
+        "time": todo.time.strftime("%H:%M") if todo.time else None,
+        "timezone": todo.timezone,
         "categoryId": todo.category_id,
         "importance": todo.importance,
         "hardship": todo.hardship,
         "dueDate": todo.due_date,
-        "visibility": todo.visibility,
-        "groupId": todo.group_id,
         "x": todo.x,
         "y": todo.y,
         "isRoutine": todo.is_routine,
@@ -285,6 +353,7 @@ def bet_to_response(bet: Bet) -> dict:
 def diary_to_response(diary: Diary) -> dict:
     return {
         "diaryId": diary.id,
+        "date": diary.date.isoformat() if diary.date else diary.created_at.date().isoformat(),
         "userId": diary.user_id,
         "content": diary.content,
         "imageUrl": diary.image_url,

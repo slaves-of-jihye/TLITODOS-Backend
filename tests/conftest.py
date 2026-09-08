@@ -1,14 +1,25 @@
-import pytest
+import os
+from uuid import uuid4
+
 import pytest_asyncio
 from fastapi import Header
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.pool import StaticPool
 
-from app.infrastructure.database import Base, Category, Group, GroupMember, Todo, User, get_session
+from app.infrastructure.database import (
+    Base,
+    Category,
+    Group,
+    GroupMember,
+    Todo,
+    User,
+    get_session,
+)
 from app.main import app
 from app.shared.auth import require_access_token
 
@@ -20,6 +31,26 @@ def _compile_jsonb_as_json_for_sqlite(type_, compiler, **kw):
 
 @pytest_asyncio.fixture
 async def engine():
+    postgres_url = os.getenv("TLITODOS_TEST_DATABASE_URL")
+    if postgres_url:
+        url = make_url(postgres_url)
+        if url.host != "127.0.0.1" or url.database != "figma_qa":
+            raise RuntimeError("PostgreSQL tests only run on the local disposable figma_qa database")
+        schema = f"qa_{uuid4().hex}"
+        admin = create_async_engine(postgres_url)
+        async with admin.begin() as connection:
+            await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+        test_engine = create_async_engine(postgres_url, connect_args={"server_settings": {"search_path": schema}})
+        try:
+            async with test_engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            yield test_engine
+        finally:
+            await test_engine.dispose()
+            async with admin.begin() as connection:
+                await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+            await admin.dispose()
+        return
     test_engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -103,7 +134,6 @@ async def make_todo(
     db,
     user_id: int,
     category_id: int,
-    visibility: str = "PRIVATE",
     group_id: int | None = None,
     title: str = "todo",
 ) -> Todo:
@@ -112,7 +142,6 @@ async def make_todo(
         category_id=category_id,
         group_id=group_id,
         title=title,
-        visibility=visibility,
         subtasks=[],
         dependencies=[],
     )

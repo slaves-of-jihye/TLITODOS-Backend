@@ -1,155 +1,85 @@
-# 기간 및 요일별 루틴 생성
+# 루틴 API 및 프론트 연동
 
-프론트에서 날짜마다 `POST /api/v1/todos`를 호출하던 코드를 아래 요청 한 번으로 교체합니다.
-서버는 루틴 정의를 저장하고 해당 날짜들의 Todo를 일괄 INSERT한 뒤 한 번에 commit합니다.
-한 요청에서 일부 날짜만 저장되는 부분 성공은 없습니다.
+피그마의 매일·매주·격주·매월·매년과 선택적 시간 설정을 지원합니다.
+프론트에서 날짜마다 POST 요청을 보내는 루프는 제거하고, 아래 요청 한 번만 보냅니다.
+서버가 반복 날짜를 계산하고 루틴과 회차별 Todo를 한 트랜잭션에 저장합니다.
+
+## 신규 루틴 생성
 
 ```http
 POST /api/v1/todos/routines
-Authorization: Bearer <token>
+Authorization: Bearer <accessToken>
 Content-Type: application/json
 
 {
   "requestId": "c0a31e62-8c24-4c3e-a384-5ad0c50d9ddd",
   "title": "운동",
+  "description": "30분 달리기",
   "categoryId": 2,
-  "startDate": "2026-09-01",
+  "startDate": "2026-09-09",
   "endDate": "2026-09-30",
-  "weekdays": [1, 3, 5],
-  "importance": "NONE",
-  "hardship": 1
-}
-```
-
-- 시작일/종료일 모두 포함, 최대 366일. 날짜는 시간대 없는 `YYYY-MM-DD`입니다.
-- `weekdays`: 월요일 1 ~ 일요일 7. 생략하면 매일. 기간 내 선택 요일이 없으면 422입니다.
-- `categoryId`는 본인 카테고리여야 합니다. `x`, `y`도 선택적으로 지정할 수 있습니다.
-- `requestId`는 생성 동작마다 UUID를 한 번 발급하고, 실패 후 재시도할 때 그대로 재사용합니다.
-  같은 사용자/키/내용이면 생성 당시 응답을 다시 돌려줍니다. 내용이 달라지면 409입니다.
-  이후 개별 Todo가 수정/삭제되어도 재시도는 이를 복구하거나 재생성하지 않습니다.
-- `dueDate`와 `isRoutine`은 요청하지 않습니다. 서버가 날짜별 `dueDate`, `isRoutine=true`를 지정합니다.
-
-201 응답에는 `routineId`, `createdCount`, `occurrences: [{todoId, dueDate}, ...]`가 날짜순으로 포함됩니다.
-기존 Todo 조회에도 `routineId`가 추가됩니다. 일반 Todo와 기존 루틴 Todo는 `null`입니다.
-
-## 요일별 반복 선택
-
-하나의 할일을 기간 내 선택한 요일마다 반복합니다. 예를 들어 9월 월·수·금 운동은
-`weekdays: [1, 3, 5]`로 한 번 요청합니다. 생성되는 날짜는
-9/2, 9/4, 9/7, 9/9, 9/11, 9/14, 9/16, 9/18, 9/21, 9/23, 9/25, 9/28, 9/30의 13개입니다.
-범위 시작일인 9/1은 화요일이므로 생성하지 않습니다.
-
-| 화면의 반복 옵션 | 요청할 `weekdays` |
-| --- | --- |
-| 매일 | 생략 또는 `[1, 2, 3, 4, 5, 6, 7]` |
-| 평일 | `[1, 2, 3, 4, 5]` |
-| 주말 | `[6, 7]` |
-| 월·수·금 | `[1, 3, 5]` |
-| 매주 일요일 | `[7]` |
-
-선택하지 않은 요일에는 Todo가 생성되지 않으며, 다른 Todo가 없다면 해당 날짜의
-월별 상태는 `incompleteCount: 0`, `categoryStatuses: []`입니다. 월을 넘어가도 요일 기준은 같습니다.
-요일마다 별개의 제목/카테고리를 지정하는 시간표 형식은 아니며, 각 요청의 제목/카테고리는 동일합니다.
-
-프론트 요일 버튼의 값 자체를 월=1~일=7로 두면 변환 없이 사용할 수 있습니다.
-
-```js
-const weekdayOptions = [
-  { value: 1, label: "월" }, { value: 2, label: "화" },
-  { value: 3, label: "수" }, { value: 4, label: "목" },
-  { value: 5, label: "금" }, { value: 6, label: "토" }, { value: 7, label: "일" },
-];
-
-function selectedRepeatDays(repeatMode, selectedDays) {
-  if (repeatMode === "daily") return undefined; // JSON에서 생략 → 매일
-  if (repeatMode !== "weekly") throw new Error("반복 방식을 선택하세요.");
-  const days = [...new Set(selectedDays.map(Number))].sort((a, b) => a - b);
-  if (!days.length || days.some((day) => !Number.isInteger(day) || day < 1 || day > 7)) {
-    throw new Error("반복할 요일을 하나 이상 선택하세요.");
+  "time": "21:00",
+  "timezone": "Asia/Seoul",
+  "recurrence": {
+    "frequency": "WEEKLY",
+    "interval": 2,
+    "weekdays": [1, 3, 5]
   }
-  return days;
 }
-
-// 아래 prepareRoutineSubmission에 넘길 fields 구성 예시
-const weeklyFields = {
-  title: "월수금 운동", categoryId: 2,
-  startDate: "2026-09-01", endDate: "2026-09-30",
-  weekdays: selectedRepeatDays("weekly", [1, 3, 5]),
-};
 ```
 
-요일 선택을 변경한 새 루틴은 새 requestId로 제출합니다. 이미 전송한 요청의 결과가
-불확실하다면 기존 본문으로 결과를 확인한 뒤 새 생성 여부를 결정합니다.
+위 요청은 시작일이 포함된 9/7~9/13 주부터 격주로 반복하므로
+9/9, 9/11, 9/21, 9/23, 9/25의 5회차를 만듭니다. 시작일 이전 9/7은 만들지 않습니다.
 
-## 프론트 호출 예시
+| 항목 | 규칙 |
+| --- | --- |
+| requestId | 생성 동작마다 UUID 발급. 재시도는 같은 키와 같은 본문 |
+| title / description | 제목 1~40자, 설명 최대 100자 |
+| categoryId | 본인 카테고리 |
+| startDate / endDate | YYYY-MM-DD, 양끝 포함, 최대 36,600일 |
+| time | HH:MM, 5분 단위. 생략/null은 미설정 |
+| timezone | IANA 시간대, 기본 Asia/Seoul |
+| recurrence.frequency | DAILY, WEEKLY, MONTHLY, YEARLY |
+| recurrence.interval | WEEKLY에서 1=매주, 2=격주. 나머지는 1 |
+| recurrence.weekdays | WEEKLY에서 월=1~일=7. 중복 제거/정렬. 생략하면 시작일 요일 |
+| 최대 회차 | 실제 발생하는 회차 1~1,000개. 초과/0개면 422, 부분 생성 없음 |
 
-기존 날짜별 `for`/`Promise.all` 생성 루프를 제거하고 루틴 생성 동작마다 아래 제출 함수를 한 번 만듭니다.
-일반 Todo 생성은 계속 `POST /api/v1/todos`를 사용합니다.
+- 매일: DAILY. 날짜 범위의 모든 날짜.
+- 매월: MONTHLY. 시작일과 같은 일자. 1/31 시작이면 2월/4월 등은 건너뜁니다.
+- 매년: YEARLY. 시작일과 같은 월·일. 2/29 시작이면 윤년에만 생성합니다.
+- 없는 날짜를 말일로 이동하지 않습니다.
+- 호환용 최상위 weekdays도 지원합니다. 생략하면 매일, [1,3,5]면 매주 월수금입니다.
+  recurrence와 동시에 보내면 422입니다.
+- groupId, visibility, dueDate, isRoutine은 요청하지 않습니다.
+  날짜별 Todo는 startDate=dueDate=그 회차 날짜, isRoutine=true, routineId를 가집니다.
+- 날짜별 완료 상태는 독립적이며, 같은 회차가 여러 날짜에 걸치도록 개별 수정하면 그 기간에는 동일한 완료 상태를 표시합니다.
 
-```js
-function prepareRoutineSubmission(apiUrl, fields) {
-  // 명시적으로 지원 필드만 전달: 기존 폼의 dueDate/isRoutine 등을 펼치면 422가 납니다.
-  const body = JSON.stringify({
-    requestId: crypto.randomUUID(),
-    title: fields.title,
-    categoryId: fields.categoryId,
-    startDate: fields.startDate,
-    endDate: fields.endDate,
-    weekdays: fields.weekdays, // undefined면 JSON에서 빠져 매일 반복
-    importance: fields.importance,
-    hardship: fields.hardship,
-    x: fields.x,
-    y: fields.y,
-  });
-  let inFlight = null;
-  let savedResult = null;
+## 기존 할 일을 루틴으로 전환
 
-  return function submit(accessToken) {
-    if (savedResult) return Promise.resolve(savedResult);
-    if (inFlight) return inFlight; // 더블 클릭도 같은 Promise 사용
+```http
+POST /api/v1/todos/101/routine
+Authorization: Bearer <accessToken>
+Content-Type: application/json
 
-    inFlight = (async () => {
-      const response = await fetch(`${apiUrl.replace(/\/$/, "")}/api/v1/todos/routines`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body,
-      });
-      // 프록시 오류는 HTML 등으로 올 수 있으므로 JSON 파싱 실패도 처리합니다.
-      const result = await response.json().catch(() => null);
-      if (!response.ok) {
-        const detail = result?.detail;
-        const message = Array.isArray(detail)
-          ? detail.map((item) => `${item.loc.join(".")}: ${item.msg}`).join("\n")
-          : detail?.message ?? `루틴 생성 실패 (HTTP ${response.status})`;
-        const error = new Error(message);
-        error.status = response.status;
-        throw error;
-      }
-      if (!result) throw new Error("응답을 확인할 수 없습니다. 같은 요청으로 재시도하세요.");
-      savedResult = result;
-      return result;
-    })().finally(() => { inFlight = null; });
-    return inFlight;
-  };
+{
+  "requestId": "db743877-c97f-4563-bc31-0bf37182920c",
+  "startDate": "2026-09-08",
+  "endDate": "2027-09-08",
+  "time": null,
+  "recurrence": {"frequency": "MONTHLY"}
 }
-
-// 생성 폼을 확정할 때 한 번 생성. React라면 이 함수를 ref 등에 보관합니다.
-const submitRoutine = prepareRoutineSubmission(API_URL, {
-  title: "운동", categoryId: 2,
-  startDate: "2026-09-07", endDate: "2026-09-11", weekdays: [1, 3, 5],
-});
-
-const created = await submitRoutine(accessToken);
-// 네트워크 오류 후에는 같은 submitRoutine(accessToken)을 재호출합니다.
-// 401이면 accessToken을 갱신한 뒤 같은 함수에 새 토큰을 전달합니다.
-// 요청마다 prepareRoutineSubmission을 다시 호출하면 중복 방지가 되지 않습니다.
-console.log(created.routineId, created.createdCount);
 ```
 
-위 예시의 응답은 다음과 같습니다. ID 값은 예시입니다.
+제목/카테고리는 보내지 않습니다. 기존 Todo의 내용을 사용합니다.
+원본 ID 101을 첫 발생 날짜의 회차로 이동하고, 이후 날짜만 추가 생성합니다.
+원본을 따로 남겨 같은 날짜에 중복 생성하지 않습니다.
+원본 완료 상태/하위 항목 상태는 유지하며, 이후 회차의 완료 상태는 초기화합니다.
+원본에 연결된 내기나 다른 Todo의 선행 참조는 원본 ID를 계속 가리킵니다.
+이미 루틴에 속한 Todo는 409, 타인의 Todo는 404입니다.
+기존 제목이 40자를 넘는 경우 먼저 제목을 수정해야 합니다.
+
+신규 생성과 전환 모두 다음 형태의 201 응답을 반환합니다.
+createdCount는 원본 재사용을 포함한 총 회차 수입니다.
 
 ```json
 {
@@ -163,70 +93,118 @@ console.log(created.routineId, created.createdCount);
 }
 ```
 
-성공 후 현재 날짜의 `GET /api/v1/todos?date=2026-09-07`과
-`GET /api/v1/todos/daily-status?month=2026-09` 캐시를 무효화하거나 새로 조회합니다.
-여러 달에 걸친 범위라면 그 범위의 월별 캐시도 무효화합니다.
-생성 성공 뒤 조회 갱신에 실패한 경우 생성 키를 새로 만들지 말고 조회만 재시도합니다.
-날짜별 Todo의 완료/완료 해제/수정/삭제와 월별 집계는 기존 API를 사용합니다.
-시리즈 전체 수정/삭제 API는 이번 변경에 포함하지 않습니다.
+## 중복 방지와 재시도
 
-## 요청 계약과 오류 처리
+같은 사용자/requestId/정규화된 본문이면 생성 당시 결과를 반환합니다.
+요일 순서나 중복은 정규화합니다. 내용이 바뀌면 409입니다.
+서버 응답을 받지 못했다고 새 UUID를 발급하면 새 루틴이 만들어지므로, 실패 시 기존 요청을 보관하고 재사용하세요.
 
-| 필드 | 필수 | 규칙 |
-| --- | --- | --- |
-| `requestId` | 예 | UUID. 한 사용자 내에서 하나의 생성 동작에 고정 |
-| `title` | 예 | 1~200자 |
-| `categoryId` | 예 | 본인 카테고리 ID |
-| `startDate`, `endDate` | 예 | `YYYY-MM-DD`, 양끝 포함 1~366일 |
-| `weekdays` | 아니오 | 월=1~일=7 정수 배열. 생략하면 매일, 빈 배열은 거절. 중복 제거/정렬 후 저장 |
-| `importance` | 아니오 | `NONE`(기본), `LOW`, `HIGH` |
-| `hardship` | 아니오 | 1~5, 기본 1 |
-| `x`, `y` | 아니오 | 유한한 숫자, 기본 0 |
+생성 결과는 불변 요청 기록이고, 이후 개별 Todo 수정은 이 기록을 바꾸지 않습니다.
+삭제된 루틴의 재시도는 410이며, 삭제한 회차를 다시 생성하지 않습니다.
+루틴 규칙 조회는 GET /api/v1/todos/routines/{routineId}, 현재 회차 상태는 Todo 조회를 사용합니다.
 
-`groupId`, `visibility`, `dueDate`, `isRoutine` 등 정의하지 않은 필드를 보내면 422입니다.
-프론트 요일이 JS `getDay()` 기준(일=0)이라면 ISO 요일로 변환해야 합니다(`day === 0 ? 7 : day`).
-날짜 input 값은 그대로 전송하며, 로컬 날짜를 `toISOString()`으로 변환해 하루가 밀리지 않도록 합니다.
+## JavaScript 연동 예제
 
-| 응답 | 프론트 처리 |
+```js
+function prepareRoutineSubmission(apiUrl, fields, sourceTodoId = null) {
+  const requestId = crypto.randomUUID();
+  const body = JSON.stringify({ ...fields, requestId });
+  const path = sourceTodoId == null
+    ? "/api/v1/todos/routines"
+    : `/api/v1/todos/${sourceTodoId}/routine`;
+  let inFlight = null;
+  let savedResult = null;
+
+  return function submit(accessToken) {
+    if (savedResult) return Promise.resolve(savedResult);
+    if (inFlight) return inFlight;
+    inFlight = (async () => {
+      const response = await fetch(apiUrl.replace(/\/$/, "") + path, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body,
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        const detail = result?.detail;
+        const message = Array.isArray(detail)
+          ? detail.map((item) => item.msg).join("\n")
+          : detail?.message ?? `HTTP ${response.status}`;
+        const error = new Error(message);
+        error.status = response.status;
+        throw error;
+      }
+      if (!result) throw new Error("응답을 확인할 수 없습니다. 같은 요청으로 재시도하세요.");
+      savedResult = result;
+      return result;
+    })().finally(() => { inFlight = null; });
+    return inFlight;
+  };
+}
+
+const submit = prepareRoutineSubmission(API_URL, {
+  title: "월수금 운동",
+  categoryId: 2,
+  startDate: "2026-09-01",
+  endDate: "2026-09-30",
+  time: "21:00",
+  recurrence: { frequency: "WEEKLY", weekdays: [1, 3, 5] },
+});
+
+const result = await submit(accessToken);
+// 네트워크 실패: 동일 submit(accessToken) 재호출.
+// 401: 토큰 갱신 후 동일 submit(newAccessToken) 재호출.
+// 매번 prepareRoutineSubmission을 다시 호출하면 중복 방지가 안 됩니다.
+```
+
+선택한 날짜의 GET /todos와 기간에 포함된 모든 월의 GET /todos/daily-status 캐시를 갱신하세요.
+생성이 성공했는데 조회 갱신만 실패했다면 조회만 재시도합니다.
+기존 Todo를 전환한 경우 원본이 있던 이전 날짜/월 캐시도 갱신해야 합니다.
+새로고침을 넘기는 재시도는 사용자별 requestId와 본문을 함께 보관해야 합니다. 토큰을 본문에 보관하지 않습니다.
+
+요일 버튼은 월=1~일=7을 사용합니다. JS getDay()의 일요일=0은 7로 변환합니다.
+날짜 input의 YYYY-MM-DD 문자열을 그대로 전송하세요. toISOString()으로 변환해 날짜를 밀지 마세요.
+
+## 전체 삭제
+
+```js
+const response = await fetch(`${API_URL}/api/v1/todos/routines/${routineId}`, {
+  method: "DELETE",
+  headers: { Authorization: `Bearer ${accessToken}` },
+});
+if (!response.ok) throw new Error("루틴 삭제 실패");
+const { deletedCount } = await response.json();
+```
+
+- 완료된 회차와 원본을 포함해 전부 삭제합니다. 프론트에서 전체 삭제임을 알리고 호출하세요.
+- 회차 Todo의 기존 DELETE /todos/{todoId}도 같은 전체 삭제 동작입니다.
+- 남아 있는 다른 Todo의 선행 참조와 회차에 달린 내기/알림도 정리합니다.
+- 루틴 ID로 삭제를 재호출하면 성공, deletedCount: 0입니다.
+- 개별 Todo PATCH는 해당 회차에만 적용합니다. 전체 반복 규칙 변경 API는 이번 UI 범위에 포함하지 않습니다.
+- 과거 isRoutine만 있고 routineId가 없는 행은 자동 묶기/전체 삭제 대상으로 추정하지 않습니다.
+
+## 오류
+
+| 상태 | 의미 |
 | --- | --- |
-| 201 | 신규 생성과 동일 요청 재응답 모두 성공. 결과를 받고 목록 갱신 |
-| 401 | 토큰 갱신/재로그인 후 동일 요청으로 재시도 |
-| 404 | 본인 카테고리가 없거나 다른 사용자의 카테고리. 카테고리 재선택 |
-| 409 | 같은 `requestId`에 다른 내용. 원래 요청 확인. 의도적으로 새 루틴을 만드는 경우만 새 키 사용 |
-| 422 | 날짜/기간/요일/필드 검증 오류. 입력 수정 후 새 생성 동작 시작 |
-| 네트워크 오류/5xx | 서버에서 저장됐지만 응답만 유실됐을 수 있음. 같은 키와 본문으로 재시도 |
+| 201 | 최초 생성 또는 동일 생성 요청의 재응답 |
+| 401 | 로그인/토큰 갱신 필요 |
+| 404 | 본인 카테고리/원본 Todo/루틴이 없음 |
+| 409 | 요청 키와 본문 충돌 또는 이미 루틴인 Todo를 다시 전환 |
+| 410 | 삭제한 루틴. 같은 키로 재생성하지 않음 |
+| 422 | 기간/시간/요일/제목/발생 횟수 등 검증 오류 |
+| 네트워크 오류/5xx | 저장 여부가 불확실하므로 같은 키/본문으로 재시도 |
 
-예제는 메모리에 요청을 보관합니다. 새로고침 후 재시도까지 지원하려면 미확정 요청의
-`requestId`와 본문을 사용자별로 함께 보관하고 복구해야 합니다. 토큰은 이 본문에 저장하지 않습니다.
-요청 결과를 모르는 상태에서 키만 새로 발급하면 기존 요청과 별개로 생성될 수 있습니다.
+## DB와 배포
 
-## 배포 및 기존 데이터
+todo_routines.definition은 정규화된 최초 요청, creation_result는 최초 응답입니다.
+Todo.routine_id와 occurrence_date가 회차를 연결하고, 두 값에 유일성을 적용합니다.
+개별 Todo의 날짜를 수정해도 occurrence_date(원래 발생 날짜)는 변하지 않습니다.
+전체 삭제 시 Todo 행을 제거하고 내부 루틴 요청 기록에 deleted_at을 남깁니다.
+기간 내 실제 회차를 저장하는 방식이며, 무한 반복/조회 시 가상 생성 방식은 아닙니다.
 
-시작 시 `todo_routines` 테이블 생성과 `todos.routine_id` nullable FK/인덱스 추가를 수행합니다.
-기존 `isRoutine=true` 데이터는 범위/묶음 정보가 없으므로 임의로 묶지 않습니다.
-DB 행 수는 반복 날짜 수에 비례합니다. 이번 변경은 HTTP 요청/트랜잭션 반복을 없애고
-한 번의 일괄 생성으로 바꾸는 방식이며, 조회 때 가상 Todo를 생성하는 구조는 아닙니다.
-
-현재 master의 `groupId`/`visibility` 정책을 따르므로 새 루틴 Todo는 그룹 미지정, 기본 PRIVATE로 생성됩니다.
-공개 범위 변경 PR과 별도로 검토할 수 있습니다.
-
-배포는 백엔드(스키마 추가 및 새 API) → 프론트(반복 루프 교체) 순서로 진행합니다.
-기존 Todo API는 그대로 동작하므로 프론트를 먼저 변경해 새 API가 없는 서버에 요청하지 않도록 합니다.
-신규 DDL은 테이블/nullable 컬럼/인덱스 추가만 수행합니다. 운영 데이터 삭제나 자동 재분류는 없습니다.
-ALTER TABLE 및 일반 인덱스 생성은 잠금을 잡을 수 있어 데이터가 많은 환경에서는 배포 시점을 확인합니다.
-앱을 이전 버전으로 되돌릴 때 추가 테이블/컬럼은 남겨둘 수 있으며, 생성된 Todo도 그대로 남습니다.
-데이터를 되돌리고 싶은 경우에는 해당 routineId의 실제 변경 이력을 먼저 검토해야 합니다.
-
-## 검증
-
-- 저장소 테스트: 64 passed (기존 42개 + 루틴 관련 22개).
-- 단일 요청의 월 전체 생성, 요일 선택, 하루/윤년/연말/366일 경계.
-- 본인 카테고리만 사용, 타 사용자의 날짜별 완료 변경 거절.
-- 재시도 시 동일 결과/행 수 유지, 변경된 본문은 409, 사용자별 키 분리.
-- commit 직전 실패 후 루틴/날짜별 Todo 모두 롤백, 이후 같은 키 재시도 성공.
-- 기존 날짜별 조회 및 월별 상태에 연결되고 완료 상태가 날짜별로 독립적임.
-- 일요일/금요일/주말 반복의 월 경계 및 선택하지 않은 날짜의 집계 제외.
-- weekdays 생략과 전체 요일 명시가 같은 생성 요청으로 재처리됨.
-- 별도 PostgreSQL 17 컨테이너: 기존 스키마 업그레이드/재기동, 기존 데이터 보존,
-  동시 동일 요청 10개에서 한 루틴/30개 Todo만 생성, 동시 상충 본문 중 하나 409 확인.
-  이 통합 확인은 로컬 임시 DB에서 수행했으며 운영 DB에 실행하지 않았습니다.
+기존 날짜 데이터 backfill, 보호 이미지 URL, 공개 정책 변경, 테스트/배포 절차는
+[전체 계약](figma-backend-contract.md)의 배포 항목을 함께 확인하세요.
