@@ -15,6 +15,7 @@ from app.presentation.v1.categories.categories_controller import router as categ
 from app.presentation.v1.diaries.diaries_controller import router as diaries_router
 from app.presentation.v1.group.group_controller import router as group_router
 from app.presentation.v1.todos.todos_controller import router as todos_router
+from app.presentation.v1.todos.routines_controller import router as routines_router
 
 
 Path("uploads").mkdir(exist_ok=True)
@@ -55,6 +56,7 @@ def create_app() -> FastAPI:
     app.include_router(discord_router)
     app.include_router(group_router)
     app.include_router(categories_router)
+    app.include_router(routines_router)
     app.include_router(todos_router)
     app.include_router(bets_router)
     app.include_router(diaries_router)

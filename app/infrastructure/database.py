@@ -91,6 +91,18 @@ class GroupMember(Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False)
 
 
+class TodoRoutine(Base):
+    __tablename__ = "todo_routines"
+    __table_args__ = (UniqueConstraint("user_id", "request_id", name="uq_todo_routine_request"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    request_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    definition: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    creation_result: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+
+
 class Todo(Base):
     __tablename__ = "todos"
 
@@ -106,6 +118,7 @@ class Todo(Base):
     x: Mapped[float] = mapped_column(Float, default=0, nullable=False)
     y: Mapped[float] = mapped_column(Float, default=0, nullable=False)
     is_routine: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    routine_id: Mapped[int | None] = mapped_column(ForeignKey("todo_routines.id", ondelete="SET NULL"), index=True)
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     subtasks: Mapped[list[dict]] = mapped_column(JSONB, default=list, nullable=False)
     dependencies: Mapped[list[int]] = mapped_column(JSONB, default=list, nullable=False)
@@ -145,6 +158,8 @@ async def get_session() -> AsyncGenerator[AsyncSession]:
 async def init_db() -> None:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        await connection.execute(text("ALTER TABLE todos ADD COLUMN IF NOT EXISTS routine_id INTEGER REFERENCES todo_routines(id) ON DELETE SET NULL"))
+        await connection.execute(text("CREATE INDEX IF NOT EXISTS ix_todos_routine_id ON todos (routine_id)"))
         await connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub VARCHAR(255)"))
         await connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255)"))
         await connection.execute(
@@ -246,6 +261,7 @@ def todo_to_response(todo: Todo) -> dict:
         "x": todo.x,
         "y": todo.y,
         "isRoutine": todo.is_routine,
+        "routineId": todo.routine_id,
         "isCompleted": todo.is_completed,
         "subtasks": todo.subtasks,
         "dependencies": todo.dependencies,
