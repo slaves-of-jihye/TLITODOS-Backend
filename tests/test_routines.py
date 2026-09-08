@@ -131,3 +131,35 @@ async def test_request_id_is_scoped_to_user(client, db):
     second = await client.post("/api/v1/todos/routines", json=payload, headers=auth_headers(2))
     assert second.status_code == 201
     assert first.json()["routineId"] != second.json()["routineId"]
+
+
+@pytest.mark.parametrize("weekdays,expected", [
+    ([7], ["2026-08-30", "2026-09-06", "2026-09-13"]),
+    ([5], ["2026-08-28", "2026-09-04", "2026-09-11"]),
+    ([6, 7], ["2026-08-29", "2026-08-30", "2026-09-05", "2026-09-06", "2026-09-12", "2026-09-13"]),
+])
+async def test_weekly_routine_crosses_months_without_creating_other_days(client, db, weekdays, expected):
+    payload = await setup_request(db)
+    payload.update(startDate="2026-08-28", endDate="2026-09-13", weekdays=weekdays)
+    result = await client.post("/api/v1/todos/routines", json=payload, headers=auth_headers(1))
+    assert result.status_code == 201
+    assert result.json()["createdCount"] == len(expected)
+    assert [item["dueDate"] for item in result.json()["occurrences"]] == expected
+    calendar = await client.get("/api/v1/todos/daily-status", params={"month": "2026-09"}, headers=auth_headers(1))
+    for day in calendar.json():
+        if day["date"] in expected:
+            assert day["incompleteCount"] == 1
+            assert day["categoryStatuses"] == [{"categoryId": payload["categoryId"], "isCompleted": False}]
+        else:
+            assert day["incompleteCount"] == 0
+            assert day["categoryStatuses"] == []
+
+
+async def test_explicit_every_day_is_same_as_omitting_weekdays(client, db):
+    payload = await setup_request(db)
+    first = await client.post("/api/v1/todos/routines", json=payload, headers=auth_headers(1))
+    payload["weekdays"] = [7, 6, 5, 4, 3, 2, 1]
+    retry = await client.post("/api/v1/todos/routines", json=payload, headers=auth_headers(1))
+    assert retry.status_code == 201
+    assert retry.json() == first.json()
+    assert await db.scalar(select(func.count(Todo.id))) == 30

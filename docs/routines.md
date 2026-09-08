@@ -1,4 +1,4 @@
-# 기간 루틴 생성
+# 기간 및 요일별 루틴 생성
 
 프론트에서 날짜마다 `POST /api/v1/todos`를 호출하던 코드를 아래 요청 한 번으로 교체합니다.
 서버는 루틴 정의를 저장하고 해당 날짜들의 Todo를 일괄 INSERT한 뒤 한 번에 commit합니다.
@@ -31,6 +31,55 @@ Content-Type: application/json
 
 201 응답에는 `routineId`, `createdCount`, `occurrences: [{todoId, dueDate}, ...]`가 날짜순으로 포함됩니다.
 기존 Todo 조회에도 `routineId`가 추가됩니다. 일반 Todo와 기존 루틴 Todo는 `null`입니다.
+
+## 요일별 반복 선택
+
+하나의 할일을 기간 내 선택한 요일마다 반복합니다. 예를 들어 9월 월·수·금 운동은
+`weekdays: [1, 3, 5]`로 한 번 요청합니다. 생성되는 날짜는
+9/2, 9/4, 9/7, 9/9, 9/11, 9/14, 9/16, 9/18, 9/21, 9/23, 9/25, 9/28, 9/30의 13개입니다.
+범위 시작일인 9/1은 화요일이므로 생성하지 않습니다.
+
+| 화면의 반복 옵션 | 요청할 `weekdays` |
+| --- | --- |
+| 매일 | 생략 또는 `[1, 2, 3, 4, 5, 6, 7]` |
+| 평일 | `[1, 2, 3, 4, 5]` |
+| 주말 | `[6, 7]` |
+| 월·수·금 | `[1, 3, 5]` |
+| 매주 일요일 | `[7]` |
+
+선택하지 않은 요일에는 Todo가 생성되지 않으며, 다른 Todo가 없다면 해당 날짜의
+월별 상태는 `incompleteCount: 0`, `categoryStatuses: []`입니다. 월을 넘어가도 요일 기준은 같습니다.
+요일마다 별개의 제목/카테고리를 지정하는 시간표 형식은 아니며, 각 요청의 제목/카테고리는 동일합니다.
+
+프론트 요일 버튼의 값 자체를 월=1~일=7로 두면 변환 없이 사용할 수 있습니다.
+
+```js
+const weekdayOptions = [
+  { value: 1, label: "월" }, { value: 2, label: "화" },
+  { value: 3, label: "수" }, { value: 4, label: "목" },
+  { value: 5, label: "금" }, { value: 6, label: "토" }, { value: 7, label: "일" },
+];
+
+function selectedRepeatDays(repeatMode, selectedDays) {
+  if (repeatMode === "daily") return undefined; // JSON에서 생략 → 매일
+  if (repeatMode !== "weekly") throw new Error("반복 방식을 선택하세요.");
+  const days = [...new Set(selectedDays.map(Number))].sort((a, b) => a - b);
+  if (!days.length || days.some((day) => !Number.isInteger(day) || day < 1 || day > 7)) {
+    throw new Error("반복할 요일을 하나 이상 선택하세요.");
+  }
+  return days;
+}
+
+// 아래 prepareRoutineSubmission에 넘길 fields 구성 예시
+const weeklyFields = {
+  title: "월수금 운동", categoryId: 2,
+  startDate: "2026-09-01", endDate: "2026-09-30",
+  weekdays: selectedRepeatDays("weekly", [1, 3, 5]),
+};
+```
+
+요일 선택을 변경한 새 루틴은 새 requestId로 제출합니다. 이미 전송한 요청의 결과가
+불확실하다면 기존 본문으로 결과를 확인한 뒤 새 생성 여부를 결정합니다.
 
 ## 프론트 호출 예시
 
@@ -170,12 +219,14 @@ ALTER TABLE 및 일반 인덱스 생성은 잠금을 잡을 수 있어 데이터
 
 ## 검증
 
-- 저장소 테스트: 60 passed (기존 42개 + 루틴 관련 18개).
+- 저장소 테스트: 64 passed (기존 42개 + 루틴 관련 22개).
 - 단일 요청의 월 전체 생성, 요일 선택, 하루/윤년/연말/366일 경계.
 - 본인 카테고리만 사용, 타 사용자의 날짜별 완료 변경 거절.
 - 재시도 시 동일 결과/행 수 유지, 변경된 본문은 409, 사용자별 키 분리.
 - commit 직전 실패 후 루틴/날짜별 Todo 모두 롤백, 이후 같은 키 재시도 성공.
 - 기존 날짜별 조회 및 월별 상태에 연결되고 완료 상태가 날짜별로 독립적임.
+- 일요일/금요일/주말 반복의 월 경계 및 선택하지 않은 날짜의 집계 제외.
+- weekdays 생략과 전체 요일 명시가 같은 생성 요청으로 재처리됨.
 - 별도 PostgreSQL 17 컨테이너: 기존 스키마 업그레이드/재기동, 기존 데이터 보존,
   동시 동일 요청 10개에서 한 루틴/30개 Todo만 생성, 동시 상충 본문 중 하나 409 확인.
   이 통합 확인은 로컬 임시 DB에서 수행했으며 운영 DB에 실행하지 않았습니다.
