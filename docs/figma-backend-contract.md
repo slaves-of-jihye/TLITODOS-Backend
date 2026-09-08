@@ -2,10 +2,13 @@
 
 기준: 2026-09-08, [TLITODOS Design](https://www.figma.com/design/6mBMtcwDlauTX5Gipia3Ua/TLITODOS-Design?node-id=7-2).
 디자인은 수정하지 않았습니다. 사용자 확정 사항이 정적 화면 예시보다 우선합니다.
-이 문서와 `openapi.json`은 `codex/figma-backend-alignment` 브랜치의 구현을 설명하며, 운영 배포 완료를 의미하지 않습니다.
+이 문서와 `openapi.json`은 `codex/no-auto-personal-group` 브랜치의 구현을 설명하며, 운영 배포 완료를 의미하지 않습니다.
 
 ## 확정된 동작
 
+- 신규 가입 시 기본 카테고리 `취미`·`할일`만 생성합니다. 개인 그룹은 자동 생성하지 않습니다.
+  서버 시작 시 기본 데이터 초기화에서도 그룹을 생성하지 않습니다. 기존 개인 그룹과 멤버십은 삭제하지 않습니다.
+  그룹이 없는 사용자도 Todo·루틴을 만들 수 있고, 원하면 그룹 생성/초대 가입 API를 사용합니다.
 - 선택한 날짜부터 마감 날짜까지 양끝을 포함하여 같은 Todo를 표시합니다.
   9/8 시작, 9/10 마감이면 9/8·9/9·9/10 목록과 월별 집계에 모두 포함됩니다.
 - 기간 Todo는 하나의 ID와 하나의 현재 완료 상태를 공유합니다. 날짜별 복제나 과거 완료 이력 스냅샷이 아닙니다.
@@ -230,7 +233,7 @@ PATCH /api/v1/users/me
    **배포 전 DB 백업과 공개 정책 전환 안내가 필요합니다.** 예전 앱으로 단순 롤백하면 visibility 조회가 실패합니다.
    이전 공개 범위를 복구하려면 배포 전 백업과 배포 후 변경 데이터를 함께 검토해야 합니다.
    구버전 앱을 중지한 뒤 마이그레이션/새 앱을 시작하세요. 일기의 공개 범위 설정은 이번 제거 대상이 아닙니다.
-   기존 PR #4·#5를 별도로 합치지 말고 이 통합 변경을 적용합니다.
+   기존 PR #4·#5·#6을 별도로 합치지 말고 이 후속 통합 변경을 적용합니다.
 5. 프론트는 `startDate`, `description`, `time`, `recurrence` 계약으로 변경하고, 삭제 확인 문구를 전체 루틴 삭제로 바꿉니다.
    Todo 요청의 groupId/visibility/isRoutine, 내기 요청의 requesterId를 제거합니다.
 6. 일기 이미지 URL은 토큰이 필요한 fetch로 변경합니다. 별도 프록시가 `/uploads/diaries`나
@@ -242,8 +245,9 @@ PATCH /api/v1/users/me
 
 ## 검증 결과 (2026-09-08)
 
-- SQLite: 117 passed, PostgreSQL 전용 7 skipped.
-- 별도 PostgreSQL 17: 124 passed.
+- SQLite: 119 passed, PostgreSQL 전용 7 skipped.
+- 별도 PostgreSQL 17: 126 passed.
+- 신규 가입/재로그인 시 그룹 미생성, 그룹 없이 Todo·루틴 생성, 수동 그룹 생성 및 기존 그룹 보존 검증.
 - 기존 master 스키마 / 이전 루틴 스키마에서 업그레이드와 두 번째 재시작, 기존 데이터 보존 검증.
 - Todo visibility 제거 후에도 그룹·멤버 역할·기존 Todo의 group_id 보존 및 공개 조회 검증.
 - 파싱 불가능한 기존 날짜가 있을 때 DDL/backfill 트랜잭션 전체 롤백 검증.

@@ -66,6 +66,8 @@ async def test_startup_migrates_old_schema_twice_without_losing_rows(
         )
         assert "visibility" not in columns
         assert "group_id" in columns
+        assert await connection.scalar(text("SELECT count(*) FROM groups")) == 1
+        assert await connection.scalar(text("SELECT count(*) FROM group_members WHERE user_id=1")) == 0
         assert await connection.scalar(text("SELECT name FROM groups WHERE id=10")) == "preserved-group"
         assert (
             await connection.scalar(text("SELECT role FROM group_members WHERE group_id=10 AND user_id=41")) == "LEADER"

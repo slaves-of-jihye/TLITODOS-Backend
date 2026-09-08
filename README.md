@@ -9,6 +9,7 @@
 https://www.notion.so/api-34d4deccb21e8024a8e1db08cf2a2f01
 
 - [Figma 화면 기준 백엔드 계약 및 배포 주의사항](docs/figma-backend-contract.md)
+- [전체 API 명세 — 55개 엔드포인트의 요청·응답·권한](docs/api-reference.md)
 - [루틴 반복 규칙 / 단일 요청 / JS 연동](docs/routines.md)
 - [OpenAPI](docs/openapi.json): `uv run python -m scripts.export_openapi`로 재생성
 

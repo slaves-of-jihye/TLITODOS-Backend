@@ -266,6 +266,7 @@ async def create_invite_code(session: AsyncSession) -> str:
 
 
 async def ensure_user_defaults(session: AsyncSession, user_id: int) -> None:
+    """Initialize categories only; groups are created explicitly by the user."""
     existing_categories = await session.scalar(select(func.count(Category.id)).where(Category.user_id == user_id))
     if existing_categories == 0:
         session.add_all(
@@ -274,19 +275,6 @@ async def ensure_user_defaults(session: AsyncSession, user_id: int) -> None:
                 Category(user_id=user_id, name="할일", color="#33FF57", is_deletable=True),
             ]
         )
-
-    existing_personal_group = await session.scalar(
-        select(GroupMember.id).where(GroupMember.user_id == user_id, GroupMember.role == "LEADER")
-    )
-    if existing_personal_group is None:
-        group = Group(
-            name="개인 그룹",
-            description="개인 할일 관리를 위한 기본 그룹입니다.",
-            invite_code=await create_invite_code(session),
-        )
-        session.add(group)
-        await session.flush()
-        session.add(GroupMember(group_id=group.id, user_id=user_id, role="LEADER"))
 
 
 def user_to_response(user: User) -> dict:
