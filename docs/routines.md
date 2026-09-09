@@ -100,7 +100,7 @@ createdCount는 원본 재사용을 포함한 총 회차 수입니다.
 서버 응답을 받지 못했다고 새 UUID를 발급하면 새 루틴이 만들어지므로, 실패 시 기존 요청을 보관하고 재사용하세요.
 
 생성 결과는 불변 요청 기록이고, 이후 개별 Todo 수정은 이 기록을 바꾸지 않습니다.
-삭제된 루틴의 재시도는 410이며, 삭제한 회차를 다시 생성하지 않습니다.
+전체 삭제된 루틴의 생성 재시도는 410입니다. 회차만 삭제한 경우에는 최초 생성 응답을 그대로 반환하지만 삭제한 회차를 다시 생성하지 않습니다. 현재 회차 목록은 GET /todos로 다시 조회하세요.
 루틴 규칙 조회는 GET /api/v1/todos/routines/{routineId}, 현재 회차 상태는 Todo 조회를 사용합니다.
 
 ## JavaScript 연동 예제
@@ -168,6 +168,26 @@ const result = await submit(accessToken);
 요일 버튼은 월=1~일=7을 사용합니다. JS getDay()의 일요일=0은 7로 변환합니다.
 날짜 input의 YYYY-MM-DD 문자열을 그대로 전송하세요. toISOString()으로 변환해 날짜를 밀지 마세요.
 
+## 선택한 날짜의 회차만 삭제
+
+```js
+const response = await fetch(`${API_URL}/api/v1/todos/${todoId}`, {
+  method: "DELETE",
+  headers: { Authorization: `Bearer ${accessToken}` },
+});
+if (!response.ok) throw new Error("회차 삭제 실패");
+const result = await response.json();
+// { success: true, message: "할일이 삭제되었습니다." }
+```
+
+- 달력에서 선택한 날짜의 Todo ID를 전달합니다. 서버의 오늘 날짜만 허용하는 제한은 없습니다.
+- 그 회차만 삭제하며 다른 날짜의 Todo와 루틴 정의는 유지합니다. 완료된 회차도 삭제할 수 있습니다.
+- 소유자만 삭제할 수 있습니다. 존재하지 않거나 이미 삭제한 Todo는 404입니다.
+- 해당 회차에 연결된 내기·알림과 다른 Todo의 선행 참조도 정리합니다.
+- 최초 생성 requestId로 재시도해도 삭제한 회차는 복구하지 않습니다. 생성 응답은 최초 생성 기록이므로 목록/월별 상태를 다시 조회하세요.
+- 마지막 회차를 지워도 루틴 요청 기록은 남겨 중복 재생성을 막습니다.
+- 개별 수정으로 회차가 여러 날짜에 걸치게 됐다면 그 Todo 자체가 삭제되어 해당 기간 모두에서 사라집니다.
+
 ## 전체 삭제
 
 ```js
@@ -180,7 +200,7 @@ const { deletedCount } = await response.json();
 ```
 
 - 완료된 회차와 원본을 포함해 전부 삭제합니다. 프론트에서 전체 삭제임을 알리고 호출하세요.
-- 회차 Todo의 기존 DELETE /todos/{todoId}도 같은 전체 삭제 동작입니다.
+- 회차 Todo의 DELETE /todos/{todoId}는 해당 회차만 삭제합니다. 다른 날짜는 유지됩니다.
 - 남아 있는 다른 Todo의 선행 참조와 회차에 달린 내기/알림도 정리합니다.
 - 루틴 ID로 삭제를 재호출하면 성공, deletedCount: 0입니다.
 - 개별 Todo PATCH는 해당 회차에만 적용합니다. 전체 반복 규칙 변경 API는 이번 UI 범위에 포함하지 않습니다.

@@ -182,10 +182,6 @@ async def update_todo(session: AsyncSession, todo_id: int, payload, user_id: int
 async def delete_todo(session: AsyncSession, todo_id: int, user_id: int) -> dict:
     await session.scalar(select(User.id).where(User.id == user_id).with_for_update(key_share=True))
     todo = await find_todo(session, todo_id, user_id)
-    if todo.routine_id:
-        from app.application.routines_service import delete_routine
-
-        return await delete_routine(session, todo.routine_id, user_id)
     await clean_dependencies(session, user_id, {todo_id})
     await session.delete(todo)
     await session.commit()
