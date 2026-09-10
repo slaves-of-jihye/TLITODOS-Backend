@@ -140,7 +140,7 @@ async def list_daily_todo_statuses(
             if not todo.is_completed:
                 daily_status["incompleteCount"] += 1
             category_statuses = daily_status["categoryStatuses"]
-            category_statuses[todo.category_id] = category_statuses.get(todo.category_id, True) and todo.is_completed
+            category_statuses[todo.category_id] = category_statuses.get(todo.category_id, False) or todo.is_completed
 
     return [
         {

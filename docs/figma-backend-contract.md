@@ -79,6 +79,8 @@ GET /api/v1/todos/daily-status?month=2026-09&userId=12
   `groupId`로 Todo를 분류/필터링하지 않습니다. 그룹 화면도 그 사람의 모든 공개 Todo를 표시합니다.
 - 월별 응답은 모든 날짜를 반환합니다. 각 날짜에 활성화된 Todo를 기준으로 `incompleteCount`,
   `categoryStatuses: [{categoryId, isCompleted}]`를 계산합니다. 할 일이 없는 카테고리는 제외합니다.
+- 2026-09-11 변경: 카테고리의 `isCompleted`는 해당 날짜의 할 일 중 **하나라도 완료**하면 true입니다.
+  모두 미완료이면 false이며, `incompleteCount`는 그대로 실제 미완료 할 일 수를 반환합니다.
 - 조회와 집계에 같은 날짜 포함 규칙을 적용합니다. 날짜/월 형식 오류는 422입니다.
 - 카테고리 색상, 꽃잎 불투명도, 오늘 날짜 강조는 프론트가 그립니다.
 - 완료/해제는 기존 `PATCH /{todoId}/complete`, `PATCH /{todoId}/uncomplete`입니다.

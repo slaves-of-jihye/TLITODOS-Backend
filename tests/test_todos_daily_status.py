@@ -1,3 +1,5 @@
+import pytest
+
 from tests.conftest import auth_headers, make_category, make_todo, make_user
 
 
@@ -36,7 +38,7 @@ async def test_daily_status_returns_every_day_and_category_completion(client, db
         "date": "2026-09-01",
         "incompleteCount": 1,
         "categoryStatuses": [
-            {"categoryId": first_category.id, "isCompleted": False},
+            {"categoryId": first_category.id, "isCompleted": True},
             {"categoryId": second_category.id, "isCompleted": True},
         ],
     }
@@ -50,11 +52,7 @@ async def test_daily_status_returns_every_day_and_category_completion(client, db
         "incompleteCount": 0,
         "categoryStatuses": [],
     }
-    assert empty_category.id not in {
-        category["categoryId"]
-        for day in days
-        for category in day["categoryStatuses"]
-    }
+    assert empty_category.id not in {category["categoryId"] for day in days for category in day["categoryStatuses"]}
 
 
 async def test_daily_status_only_counts_authenticated_users_todos(client, db):
@@ -76,9 +74,7 @@ async def test_daily_status_only_counts_authenticated_users_todos(client, db):
 
     assert response.status_code == 200
     assert response.json()[0]["incompleteCount"] == 1
-    assert response.json()[0]["categoryStatuses"] == [
-        {"categoryId": requester_category.id, "isCompleted": False}
-    ]
+    assert response.json()[0]["categoryStatuses"] == [{"categoryId": requester_category.id, "isCompleted": False}]
 
 
 async def test_daily_status_rejects_invalid_month(client):
@@ -89,3 +85,23 @@ async def test_daily_status_rejects_invalid_month(client):
     )
 
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "completion_states", [[], [False], [True], [False, False], [True, True], [True, False], [False, True]]
+)
+async def test_category_completion_uses_any_completed_todo(client, db, completion_states):
+    await make_user(db, 1)
+    category = await make_category(db, 1)
+    for completed in completion_states:
+        todo = await make_todo(db, 1, category.id)
+        todo.due_date = "2026-09-11"
+        todo.is_completed = completed
+    await db.commit()
+    response = await client.get("/api/v1/todos/daily-status", params={"month": "2026-09"}, headers=auth_headers(1))
+    assert response.status_code == 200
+    day = response.json()[10]
+    assert day["categoryStatuses"] == (
+        [{"categoryId": category.id, "isCompleted": any(completion_states)}] if completion_states else []
+    )
+    assert day["incompleteCount"] == completion_states.count(False)
