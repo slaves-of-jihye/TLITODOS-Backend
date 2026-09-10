@@ -227,9 +227,14 @@ async def test_convert_preserves_source_id_and_delete_removes_whole_series(clien
     routine_id = result.json()["routineId"]
     assert (await client.delete(f"/api/v1/todos/routines/{routine_id}", headers=auth_headers(2))).status_code == 404
     await client.patch(f"/api/v1/todos/{original['todoId']}/complete", headers=auth_headers(1))
-    # Deleting from an occurrence's UI also means deleting the whole routine.
+    # A converted source can be deleted independently; a retry must not restore it.
     deleted = await client.delete(f"/api/v1/todos/{original['todoId']}", headers=auth_headers(1))
-    assert deleted.json()["deletedCount"] == 3
+    assert deleted.status_code == 200
+    assert await db.scalar(select(func.count(Todo.id))) == 3
+    assert (await client.post(endpoint, json=payload, headers=auth_headers(1))).json() == result.json()
+    assert await db.scalar(select(func.count(Todo.id))) == 3
+    deleted = await client.delete(f"/api/v1/todos/routines/{routine_id}", headers=auth_headers(1))
+    assert deleted.json()["deletedCount"] == 2
     assert await db.scalar(select(func.count(Todo.id))) == 1
     remaining = (await client.get(f"/api/v1/todos/{follower['todoId']}", headers=auth_headers(1))).json()
     assert remaining["dependencies"] == []

@@ -2061,7 +2061,8 @@
         "tags": [
           "todos"
         ],
-        "summary": "Delete Todo",
+        "summary": "할 일 또는 루틴의 선택한 회차만 삭제",
+        "description": "routineId가 있어도 지정한 todoId 하나만 삭제합니다. 전체 루틴 삭제는 DELETE /api/v1/todos/routines/{routineId}를 사용합니다.",
         "operationId": "delete_todo_api_v1_todos__todoId__delete",
         "parameters": [
           {

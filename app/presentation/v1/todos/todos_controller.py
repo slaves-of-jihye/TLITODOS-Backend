@@ -131,7 +131,11 @@ async def update_todo(
     return await todos_service.update_todo(session, todoId, payload, user_id)
 
 
-@router.delete("/{todoId}")
+@router.delete(
+    "/{todoId}",
+    summary="할 일 또는 루틴의 선택한 회차만 삭제",
+    description="routineId가 있어도 지정한 todoId 하나만 삭제합니다. 전체 루틴 삭제는 DELETE /api/v1/todos/routines/{routineId}를 사용합니다.",
+)
 async def delete_todo(
     todoId: int,
     user_id: int = Depends(require_access_token),
