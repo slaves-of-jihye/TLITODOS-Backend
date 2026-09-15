@@ -12,6 +12,8 @@ from app.infrastructure.database import (
 )
 from app.shared.scheduling import utcnow
 
+NOTIFICATION_TYPES = ("TODO_COMPLETED", "DIARY_CREATED", "BET_REQUESTED")
+
 
 def peer_ids(user_id):
     groups = select(GroupMember.group_id).where(GroupMember.user_id == user_id)
@@ -29,19 +31,39 @@ async def notify_peers(session, actor_id, notification_type, event_key, **refere
         )
 
 
+def visible_notification_conditions(user_id):
+    # Both list and unread status must apply the same visibility rules.
+    # Queries using these conditions must outer-join Diary.
+    return (
+        Notification.recipient_id == user_id,
+        or_(Notification.type == "BET_REQUESTED", Notification.actor_id.in_(peer_ids(user_id))),
+        or_(Notification.diary_id.is_(None), Diary.visibility == "PUBLIC"),
+    )
+
+
+async def unread_status(session, user_id):
+    kinds = await session.scalars(
+        select(Notification.type)
+        .outerjoin(Diary, Notification.diary_id == Diary.id)
+        .where(
+            *visible_notification_conditions(user_id),
+            Notification.read_at.is_(None),
+            Notification.type.in_(NOTIFICATION_TYPES),
+        )
+        .distinct()
+    )
+    unread_types = set(kinds)
+    return {kind: kind in unread_types for kind in NOTIFICATION_TYPES}
+
+
 async def list_notifications(session, user_id, kind=None, cursor=None, limit=30):
-    # Recheck membership and diary visibility at read time (including old events).
     statement = (
         select(Notification, User, Todo, Diary, Bet)
         .join(User, Notification.actor_id == User.id)
         .outerjoin(Todo, Notification.todo_id == Todo.id)
         .outerjoin(Diary, Notification.diary_id == Diary.id)
         .outerjoin(Bet, Notification.bet_id == Bet.id)
-        .where(
-            Notification.recipient_id == user_id,
-            or_(Notification.type == "BET_REQUESTED", Notification.actor_id.in_(peer_ids(user_id))),
-            or_(Notification.diary_id.is_(None), Diary.visibility == "PUBLIC"),
-        )
+        .where(*visible_notification_conditions(user_id))
     )
     if kind:
         statement = statement.where(Notification.type == kind)

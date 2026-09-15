@@ -3553,6 +3553,56 @@
         }
       }
     },
+    "/api/v1/notifications/unread-status": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "알림 타입별 안 읽은 알림 존재 여부",
+        "description": "본인이 조회할 수 있는 알림 전체에서 readAt이 null인 알림이 하나라도 있으면 해당 타입이 true입니다. 조회로 읽음 상태를 변경하지 않습니다.",
+        "operationId": "unread_status_api_v1_notifications_unread_status_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationUnreadStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/notifications/{notificationId}/read": {
       "patch": {
         "tags": [
@@ -4170,6 +4220,29 @@
           "discordAlertEnabled"
         ],
         "title": "NotificationSettingsRequest"
+      },
+      "NotificationUnreadStatusResponse": {
+        "properties": {
+          "TODO_COMPLETED": {
+            "type": "boolean",
+            "title": "Todo Completed"
+          },
+          "DIARY_CREATED": {
+            "type": "boolean",
+            "title": "Diary Created"
+          },
+          "BET_REQUESTED": {
+            "type": "boolean",
+            "title": "Bet Requested"
+          }
+        },
+        "type": "object",
+        "required": [
+          "TODO_COMPLETED",
+          "DIARY_CREATED",
+          "BET_REQUESTED"
+        ],
+        "title": "NotificationUnreadStatusResponse"
       },
       "NotificationsPageResponse": {
         "properties": {

@@ -2,7 +2,7 @@
 
 기준: 2026-09-08 · 브랜치 `codex/no-auto-personal-group` · PR #6 이후 개인 그룹 자동 생성 제거 포함.
 
-운영 서버 배포 여부와 별개인 **현재 구현 기준 문서**입니다. 전체 55개 API의 경로·메서드·파라미터·요청 본문·응답을 한곳에 모았습니다.
+운영 서버 배포 여부와 별개인 **현재 구현 기준 문서**입니다. 전체 56개 API의 경로·메서드·파라미터·요청 본문·응답을 한곳에 모았습니다.
 OpenAPI 3.1.0을 바탕으로 작성하고, OpenAPI에 응답 모델이 없는 기존 API는 서비스 코드의 반환값으로 보완했습니다.
 예제의 ID·날짜·문구는 설명용이며 실제 값은 달라집니다. 선택 필드와 null 허용은 서로 다른 개념입니다.
 
@@ -90,6 +90,7 @@ OpenAPI 3.1.0을 바탕으로 작성하고, OpenAPI에 응답 모델이 없는 �
 | GET | [`/api/v1/notifications`](#api-53) | 알림 | Bearer 필수 |
 | PATCH | [`/api/v1/notifications/{notificationId}/read`](#api-54) | 알림 | Bearer 필수 |
 | GET | [`/ping`](#api-55) | 상태 확인 | 불필요 |
+| GET | [`/api/v1/notifications/unread-status`](#api-56) | 알림 | Bearer 필수 |
 
 <a id="api-1"></a>
 
@@ -1933,9 +1934,57 @@ Ping
 ```
 
 
+<a id="api-56"></a>
+
+## 56. GET /api/v1/notifications/unread-status
+
+2026-09-15 추가. 알림 타입별로 현재 사용자가 읽지 않은 알림이 하나라도 있는지 확인합니다.
+
+인증: `Authorization: Bearer <accessToken>` 필수. 요청 본문·쿼리 파라미터는 없습니다.
+토큰의 본인 알림만 확인하며, 조회 가능한 전체 알림을 대상으로 합니다(페이지 제한 없음).
+
+### 응답
+
+200 OK — [NotificationUnreadStatusResponse](#schema-notificationunreadstatusresponse)
+
+```json
+{
+  "TODO_COMPLETED": true,
+  "DIARY_CREATED": false,
+  "BET_REQUESTED": true
+}
+```
+
+- 세 키는 항상 반환됩니다. 해당 타입의 `readAt == null` 알림이 하나라도 있으면 true입니다.
+- 알림이 없거나 모두 읽었으면 false입니다. GET 요청이 알림을 읽음 처리하지 않습니다.
+- 기존 알림 목록과 동일한 접근 권한을 적용합니다. 비공개 일기와 탈퇴한 그룹의 활동 알림은 제외합니다.
+- 수신한 내기 요청은 기존 목록처럼 공동 그룹이 없어도 확인할 수 있습니다.
+- 인증 실패는 401입니다. 오류 응답 형식은 공통 규칙을 따릅니다.
+
+```js
+const response = await fetch(`${API_URL}/api/v1/notifications/unread-status`, {
+  headers: { Authorization: `Bearer ${accessToken}` },
+});
+if (!response.ok) throw new Error(`HTTP ${response.status}`);
+const unread = await response.json();
+// unread.TODO_COMPLETED / unread.DIARY_CREATED / unread.BET_REQUESTED
+```
+
+알림을 읽음 처리하거나 새 알림을 수신한 뒤 다시 조회하여 뱃지를 갱신합니다.
+
 ## 요청 / 응답 스키마 사전
 
 각 엔드포인트의 스키마 링크는 아래의 필드 정의를 가리킵니다. nullable은 null 가능을 뜻하며 PATCH의 추가 검증은 후반 동작 계약을 함께 적용합니다.
+
+<a id="schema-notificationunreadstatusresponse"></a>
+
+### NotificationUnreadStatusResponse
+
+| 필드 | 타입 | 필수 | 의미 |
+| --- | --- | --- | --- |
+| `TODO_COMPLETED` | boolean | 예 | 읽지 않은 할 일 완료 알림 존재 |
+| `DIARY_CREATED` | boolean | 예 | 읽지 않은 일기 작성 알림 존재 |
+| `BET_REQUESTED` | boolean | 예 | 읽지 않은 내기 요청 알림 존재 |
 
 <a id="schema-actorresponse"></a>
 

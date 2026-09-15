@@ -88,6 +88,12 @@ class NotificationsPageResponse(BaseModel):
     nextCursor: int | None
 
 
+class NotificationUnreadStatusResponse(BaseModel):
+    TODO_COMPLETED: bool
+    DIARY_CREATED: bool
+    BET_REQUESTED: bool
+
+
 class RoutineDeleteResponse(BaseModel):
     success: bool
     routineId: int

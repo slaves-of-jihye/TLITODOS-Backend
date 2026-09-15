@@ -187,10 +187,23 @@ Content-Type: application/json
 GET /api/v1/notifications?type=TODO_COMPLETED&limit=30
 GET /api/v1/notifications?type=DIARY_CREATED&cursor=120&limit=30
 GET /api/v1/notifications?type=BET_REQUESTED
+GET /api/v1/notifications/unread-status
 PATCH /api/v1/notifications/120/read
 ```
 
 응답: `{items: [...], nextCursor: number | null}`. type 생략 시 전체, limit 1~100.
+
+2026-09-15 추가: `GET /api/v1/notifications/unread-status`는 Bearer 인증 후 타입별 미확인 알림 존재 여부를 반환합니다.
+요청 본문/쿼리 없이 본인 알림 전체를 확인하며 다음 세 키는 항상 boolean입니다.
+
+```json
+{"TODO_COMPLETED": true, "DIARY_CREATED": false, "BET_REQUESTED": true}
+```
+
+- `readAt == null`인 알림이 하나라도 있으면 true, 없거나 모두 읽었으면 false입니다.
+- 기존 목록과 동일하게 그룹 관계·일기 공개 여부를 검사합니다. 더 이상 조회할 수 없는 알림은 제외합니다.
+- 페이지 제한 없이 모든 알림을 확인합니다. 조회 자체는 읽음 상태를 변경하지 않습니다.
+- 알림 읽음 처리 뒤 다시 호출하면 갱신된 결과를 받습니다. 인증 실패는 401입니다.
 항목에는 notificationId, type, actor(이름/사진/ID), todo(제목/설명/ID), diaryId, bet, createdAt, readAt이 포함됩니다.
 이벤트와 원본 변경을 같은 DB 트랜잭션에 저장합니다. 여러 그룹을 공유해도 한 이벤트의 수신자별 알림은 하나입니다.
 공개 일기 생성/비공개→공개 시 그룹원에게 알림을 보냅니다. 비공개 전환 시 해당 알림을 제거합니다.

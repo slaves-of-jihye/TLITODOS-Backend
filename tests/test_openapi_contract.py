@@ -22,6 +22,13 @@ def test_frontend_contract_contains_new_request_and_response_fields():
     assert "requesterId" not in schemas["BetCreateRequest"]["properties"]
     assert schemas["Recurrence"]["properties"]["frequency"]["enum"] == ["DAILY", "WEEKLY", "MONTHLY", "YEARLY"]
     assert "/api/v1/notifications" in spec["paths"]
+    unread = spec["paths"]["/api/v1/notifications/unread-status"]["get"]
+    assert unread["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith(
+        "/NotificationUnreadStatusResponse"
+    )
+    unread_schema = schemas["NotificationUnreadStatusResponse"]
+    assert set(unread_schema["required"]) == {"TODO_COMPLETED", "DIARY_CREATED", "BET_REQUESTED"}
+    assert all(field["type"] == "boolean" for field in unread_schema["properties"].values())
     for path, method in (("/api/v1/diaries", "post"), ("/api/v1/diaries/{diaryId}", "patch")):
         assert (
             "image"
