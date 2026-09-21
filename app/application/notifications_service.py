@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 
 from app.infrastructure.database import (
     Bet,
@@ -85,6 +85,23 @@ async def list_notifications(session, user_id, kind=None, cursor=None, limit=30)
             }
         )
     return {"items": items, "nextCursor": items[-1]["notificationId"] if len(rows) > limit else None}
+
+
+async def read_all_todo_completed(session, user_id):
+    # Recipient-scoped bulk update, including older events no longer in the feed.
+    # Repeated/concurrent calls preserve existing read timestamps.
+    result = await session.execute(
+        update(Notification)
+        .where(
+            Notification.recipient_id == user_id,
+            Notification.type == "TODO_COMPLETED",
+            Notification.read_at.is_(None),
+        )
+        .values(read_at=utcnow())
+        .execution_options(synchronize_session=False)
+    )
+    await session.commit()
+    return {"success": True, "updatedCount": result.rowcount}
 
 
 async def read_notification(session, notification_id, user_id):

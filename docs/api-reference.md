@@ -2,7 +2,7 @@
 
 기준: 2026-09-08 · 브랜치 `codex/no-auto-personal-group` · PR #6 이후 개인 그룹 자동 생성 제거 포함.
 
-운영 서버 배포 여부와 별개인 **현재 구현 기준 문서**입니다. 전체 56개 API의 경로·메서드·파라미터·요청 본문·응답을 한곳에 모았습니다.
+운영 서버 배포 여부와 별개인 **현재 구현 기준 문서**입니다. 전체 58개 API의 경로·메서드·파라미터·요청 본문·응답을 한곳에 모았습니다.
 OpenAPI 3.1.0을 바탕으로 작성하고, OpenAPI에 응답 모델이 없는 기존 API는 서비스 코드의 반환값으로 보완했습니다.
 예제의 ID·날짜·문구는 설명용이며 실제 값은 달라집니다. 선택 필드와 null 허용은 서로 다른 개념입니다.
 
@@ -20,6 +20,7 @@ OpenAPI 3.1.0을 바탕으로 작성하고, OpenAPI에 응답 모델이 없는 �
 - PATCH는 보낸 필드만 수정합니다. Pydantic에 선택으로 보이는 필드도 명시적 null은 별도 검증으로 거절할 수 있으므로 후반 동작 계약을 확인하세요.
 - 할 일의 공개 범위 선택만 제거했습니다. **그룹과 멤버 기능은 유지**합니다. 일기 공개 범위와 혼동하지 마세요.
 - 폰트 키: `PRETENDARD`(기본), `CAFE24_SSURROUND_AIR`, `GOYANG`, `GRIUN_FROMSOL`, `KYOBO_HANDWRITING_2019`, `PAPERLOGY`. 목록 밖은 422.
+- 시간 표기: 사용자 정보의 `timeFormat`은 `12H`(기본) 또는 `24H`입니다. 화면 표시용 설정으로 Todo의 `time` 값(`HH:MM`)과 시간대는 변경하지 않습니다.
 
 ### 공통 오류
 
@@ -91,6 +92,8 @@ OpenAPI 3.1.0을 바탕으로 작성하고, OpenAPI에 응답 모델이 없는 �
 | PATCH | [`/api/v1/notifications/{notificationId}/read`](#api-54) | 알림 | Bearer 필수 |
 | GET | [`/ping`](#api-55) | 상태 확인 | 불필요 |
 | GET | [`/api/v1/notifications/unread-status`](#api-56) | 알림 | Bearer 필수 |
+| PATCH | [`/api/v1/notifications/todo-completed/read-all`](#api-57) | 알림 | Bearer 필수 |
+| PATCH | [`/api/v1/users/me/time-format`](#api-58) | 인증 / 사용자 | Bearer 필수 |
 
 <a id="api-1"></a>
 
@@ -292,6 +295,7 @@ Bearer 인증이 표시된 API는 본인 계정에만 적용됩니다. 로그인
   "profileImageUrl": null,
   "bio": "자기소개",
   "font": "PRETENDARD",
+  "timeFormat": "12H",
   "isDiscordLinked": false,
   "discordAlertEnabled": true
 }
@@ -344,6 +348,7 @@ Bearer 인증이 표시된 API는 본인 계정에만 적용됩니다. 로그인
   "profileImageUrl": null,
   "bio": "자기소개",
   "font": "PRETENDARD",
+  "timeFormat": "12H",
   "isDiscordLinked": false,
   "discordAlertEnabled": true
 }
@@ -1972,9 +1977,114 @@ const unread = await response.json();
 
 알림을 읽음 처리하거나 새 알림을 수신한 뒤 다시 조회하여 뱃지를 갱신합니다.
 
+<a id="api-57"></a>
+
+## 57. PATCH /api/v1/notifications/todo-completed/read-all
+
+2026-09-21 추가. 본인이 받은 미확인 할 일 완료 알림을 전부 읽음 처리합니다.
+
+인증: `Authorization: Bearer <accessToken>` 필수. 요청 본문·쿼리 파라미터는 없습니다.
+
+### 응답
+
+200 OK — [NotificationsReadAllResponse](#schema-notificationsreadallresponse)
+
+```json
+{"success": true, "updatedCount": 15}
+```
+
+- 본인의 `TODO_COMPLETED` 중 `readAt == null`인 행만 변경합니다. 타인의 알림과 일기·내기 알림은 변경하지 않습니다.
+- 페이지 제한 없이 전체를 처리합니다. 그룹 탈퇴 등으로 목록에 보이지 않는 과거 본인 수신 알림도 포함합니다.
+- 이미 읽은 알림의 읽음 시각은 보존합니다. 없거나 모두 읽었다면 `updatedCount: 0`으로 성공합니다.
+- 반복·동시 호출해도 각 알림은 한 번만 집계합니다. 처리 후 새로 생성된 알림은 다음 호출 대상입니다.
+- 인증 실패는 401입니다. 완료 후 `GET /api/v1/notifications/unread-status`를 다시 호출해 뱃지를 갱신합니다.
+
+```js
+const response = await fetch(`${API_URL}/api/v1/notifications/todo-completed/read-all`, {
+  method: "PATCH",
+  headers: { Authorization: `Bearer ${accessToken}` },
+});
+if (!response.ok) throw new Error(`HTTP ${response.status}`);
+const { updatedCount } = await response.json();
+```
+
+<a id="api-58"></a>
+
+## 58. PATCH /api/v1/users/me/time-format
+
+2026-09-21 추가. 본인의 시간 표기 설정을 변경합니다.
+
+인증: `Authorization: Bearer <accessToken>` 필수.
+
+### 요청
+
+`Content-Type: application/json` — [TimeFormatSettingRequest](#schema-timeformatsettingrequest)
+
+```json
+{"timeFormat": "24H"}
+```
+
+`timeFormat`은 필수이며 `12H`(12시간) 또는 `24H`(24시간)만 허용합니다. 누락·null·숫자·다른 문자열·추가 필드는 422입니다.
+기본값은 사용자 생성/기존 사용자 마이그레이션에 적용되며, PATCH 본문을 생략할 수 있다는 뜻은 아닙니다.
+
+### 응답
+
+200 OK — [TimeFormatSettingResponse](#schema-timeformatsettingresponse)
+
+```json
+{"success": true, "timeFormat": "24H"}
+```
+
+- `GET /api/v1/users/me` 및 기존 프로필 수정 응답에도 `timeFormat`이 포함됩니다.
+- 기존 `PATCH /api/v1/users/me`가 아니라 이 전용 API로 변경합니다. 다른 프로필 수정은 설정을 초기화하지 않습니다.
+- `12H`가 기본값입니다. 프론트에서 이 값으로 오전/오후 표기를 결정하며 Todo의 날짜·시각·시간대 데이터는 그대로 유지합니다.
+- 인증 실패는 401입니다.
+
+```js
+const response = await fetch(`${API_URL}/api/v1/users/me/time-format`, {
+  method: "PATCH",
+  headers: {
+    Authorization: `Bearer ${accessToken}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ timeFormat: "24H" }),
+});
+if (!response.ok) throw new Error(`HTTP ${response.status}`);
+const settings = await response.json();
+```
+
+배포: 앱 시작 시 `users.time_format VARCHAR(3) NOT NULL DEFAULT '12H'` 컬럼을 추가합니다.
+기존 사용자도 `12H`로 채우며, 이후 앱 재시작은 사용자가 선택한 `24H`를 덮어쓰지 않습니다.
+
 ## 요청 / 응답 스키마 사전
 
 각 엔드포인트의 스키마 링크는 아래의 필드 정의를 가리킵니다. nullable은 null 가능을 뜻하며 PATCH의 추가 검증은 후반 동작 계약을 함께 적용합니다.
+
+<a id="schema-notificationsreadallresponse"></a>
+
+### NotificationsReadAllResponse
+
+| 필드 | 타입 | 필수 | 의미 |
+| --- | --- | --- | --- |
+| `success` | boolean | 예 | 처리 성공 여부 |
+| `updatedCount` | integer | 예 | 이번 요청에서 새로 읽음 처리한 알림 수 |
+
+<a id="schema-timeformatsettingrequest"></a>
+
+### TimeFormatSettingRequest
+
+| 필드 | 타입 | 필수 | 규칙 |
+| --- | --- | --- | --- |
+| `timeFormat` | string | 예 | `12H` 또는 `24H`; null 및 추가 필드 불가 |
+
+<a id="schema-timeformatsettingresponse"></a>
+
+### TimeFormatSettingResponse
+
+| 필드 | 타입 | 필수 | 의미 |
+| --- | --- | --- | --- |
+| `success` | boolean | 예 | 처리 성공 여부 |
+| `timeFormat` | string | 예 | 저장된 `12H` 또는 `24H` |
 
 <a id="schema-notificationunreadstatusresponse"></a>
 

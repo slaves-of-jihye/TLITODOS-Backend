@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.shared.fonts import DEFAULT_FONT
+from app.shared.time_format import DEFAULT_TIME_FORMAT
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
@@ -55,6 +56,9 @@ class User(Base):
     discord_alert_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     discord_username: Mapped[str | None] = mapped_column(String(120))
     font: Mapped[str] = mapped_column(String(32), default=DEFAULT_FONT, nullable=False)
+    time_format: Mapped[str] = mapped_column(
+        String(3), default=DEFAULT_TIME_FORMAT, server_default=DEFAULT_TIME_FORMAT, nullable=False
+    )
 
 
 class AuthToken(Base):
@@ -212,6 +216,9 @@ async def init_db() -> None:
             text("ALTER TABLE users ADD COLUMN IF NOT EXISTS font VARCHAR(32) NOT NULL DEFAULT 'PRETENDARD'")
         )
         await connection.execute(text("ALTER TABLE users ALTER COLUMN font SET DEFAULT 'PRETENDARD'"))
+        await connection.execute(
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS time_format VARCHAR(3) NOT NULL DEFAULT '12H'")
+        )
         await connection.execute(text("ALTER TABLE auth_tokens ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP"))
         await connection.execute(text("ALTER TABLE auth_tokens ALTER COLUMN token TYPE VARCHAR(512)"))
         await connection.execute(
@@ -284,6 +291,7 @@ def user_to_response(user: User) -> dict:
         "profileImageUrl": user.profile_image_url,
         "bio": user.bio,
         "font": user.font,
+        "timeFormat": user.time_format,
         "isDiscordLinked": user.is_discord_linked,
         "discordAlertEnabled": user.discord_alert_enabled,
     }

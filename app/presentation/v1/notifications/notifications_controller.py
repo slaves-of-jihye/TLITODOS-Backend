@@ -7,6 +7,7 @@ from app.application import notifications_service
 from app.infrastructure.database import get_session
 from app.presentation.v1.responses import (
     NotificationsPageResponse,
+    NotificationsReadAllResponse,
     NotificationUnreadStatusResponse,
 )
 from app.shared.auth import require_access_token
@@ -33,6 +34,18 @@ async def list_notifications(
 )
 async def unread_status(user_id: int = Depends(require_access_token), session: AsyncSession = Depends(get_session)):
     return await notifications_service.unread_status(session, user_id)
+
+
+@router.patch(
+    "/todo-completed/read-all",
+    response_model=NotificationsReadAllResponse,
+    summary="할 일 완료 알림 전부 읽기",
+    description="본인이 받은 TODO_COMPLETED 미확인 알림 전체를 읽음 처리합니다. 다른 타입과 이미 읽은 알림은 변경하지 않으며 새로 처리한 개수를 반환합니다.",
+)
+async def read_all_todo_completed(
+    user_id: int = Depends(require_access_token), session: AsyncSession = Depends(get_session)
+):
+    return await notifications_service.read_all_todo_completed(session, user_id)
 
 
 @router.patch("/{notificationId}/read")

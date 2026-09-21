@@ -189,6 +189,7 @@ GET /api/v1/notifications?type=DIARY_CREATED&cursor=120&limit=30
 GET /api/v1/notifications?type=BET_REQUESTED
 GET /api/v1/notifications/unread-status
 PATCH /api/v1/notifications/120/read
+PATCH /api/v1/notifications/todo-completed/read-all
 ```
 
 응답: `{items: [...], nextCursor: number | null}`. type 생략 시 전체, limit 1~100.
@@ -209,6 +210,10 @@ PATCH /api/v1/notifications/120/read
 공개 일기 생성/비공개→공개 시 그룹원에게 알림을 보냅니다. 비공개 전환 시 해당 알림을 제거합니다.
 그룹을 나간 후에는 과거 그룹원 활동 알림도 조회에서 제외합니다. 본인에게 온 내기 요청 알림은 유지합니다.
 이 변경은 앱 내부 알림함이며, Discord 전송/웹 푸시/메일 발송은 추가하지 않았습니다.
+
+2026-09-21 추가: `PATCH /api/v1/notifications/todo-completed/read-all`은 본인의 미확인 `TODO_COMPLETED` 전체를 읽음 처리합니다.
+Bearer 인증 필수, 본문 없음. 응답은 `{"success": true, "updatedCount": 15}`이며 대상이 없거나 반복 호출하면 개수는 0입니다.
+페이지·그룹 관계와 무관하게 본인이 받은 과거 완료 알림까지 처리합니다. 타인의 알림, 다른 타입, 이미 읽은 알림의 시각은 보존합니다.
 
 ## 5. 그룹 / 프로필 / 카테고리
 
@@ -237,8 +242,15 @@ PATCH /api/v1/users/me
 - 프로필 자기소개 30자 제한은 JSON·multipart에 모두 적용합니다. 이름은 1~80자입니다.
   Google 재로그인이 직접 변경한 이름·프로필 사진을 덮어쓰지 않도록 했습니다.
 - 폰트는 기존 전용 API와 기존 6개 키를 그대로 사용합니다. 기본값은 `PRETENDARD`입니다.
+- 사용자 정보(`GET /api/v1/users/me`)에 `timeFormat: "12H" | "24H"`가 추가됩니다. 기본값은 `12H`입니다.
+  `PATCH /api/v1/users/me/time-format`에 `{"timeFormat": "24H"}`를 보내면 `{"success": true, "timeFormat": "24H"}`를 반환합니다.
+  Bearer 인증 필수이며 본인 설정만 수정합니다. 누락/null/잘못된 값/추가 필드는 422입니다.
+  프론트 화면 표시용으로만 사용하며 기존 Todo의 날짜·시각(`HH:MM`)·시간대는 바꾸지 않습니다.
 
 ## 배포 / 호환 주의사항
+
+2026-09-21 사용자 설정 추가: 앱 시작 마이그레이션에서 `users.time_format VARCHAR(3) NOT NULL DEFAULT '12H'`를 추가합니다.
+기존 사용자도 `12H`로 채우고, 반복 시작 시 사용자가 바꾼 `24H` 값은 유지합니다. 운영 DB에는 아직 적용하지 않았습니다.
 
 1. DB와 업로드 볼륨을 백업하고 이 브랜치의 API 변경을 프론트와 같이 검토합니다. **자동 배포하지 않았습니다.**
 2. 앱 시작 시 새 컬럼·알림 테이블·인덱스를 추가하고 기존 날짜를 backfill합니다.

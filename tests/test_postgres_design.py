@@ -42,6 +42,7 @@ async def test_startup_migrates_old_schema_twice_without_losing_rows(
     await db.commit()
     await db.close()
     async with engine.begin() as connection:
+        await connection.execute(text("ALTER TABLE users DROP COLUMN time_format"))
         await connection.execute(text("ALTER TABLE todos ADD COLUMN visibility VARCHAR(20) NOT NULL DEFAULT 'PRIVATE'"))
         await connection.execute(text("DROP TABLE notifications"))
         for column in ("description", "start_date", "time", "timezone", "occurrence_date"):
@@ -55,8 +56,12 @@ async def test_startup_migrates_old_schema_twice_without_losing_rows(
     monkeypatch.setattr(database, "engine", engine)
     monkeypatch.setattr(database, "SessionLocal", session_factory)
     await database.init_db()
+    async with engine.begin() as connection:
+        assert await connection.scalar(text("SELECT time_format FROM users WHERE id=41")) == "12H"
+        await connection.execute(text("UPDATE users SET time_format='24H' WHERE id=41"))
     await database.init_db()
     async with engine.connect() as connection:
+        assert await connection.scalar(text("SELECT time_format FROM users WHERE id=41")) == "24H"
         columns = set(
             await connection.scalars(
                 text(
@@ -81,6 +86,24 @@ async def test_startup_migrates_old_schema_twice_without_losing_rows(
         assert restored.time.hour == 21 and restored.time.minute == 5
         assert restored.description == ""
         assert (restored.occurrence_date is not None) == legacy_routines
+
+
+async def test_concurrent_notification_read_all_counts_each_row_once(client, db):
+    from tests.test_notification_unread_status import notification, setup
+
+    await setup(db)
+    rows = [await notification(db, "TODO_COMPLETED") for _ in range(20)]
+    other = await notification(db, "DIARY_CREATED")
+    responses = await asyncio.gather(
+        *[client.patch("/api/v1/notifications/todo-completed/read-all", headers=auth_headers(2)) for _ in range(4)]
+    )
+    assert all(response.status_code == 200 for response in responses)
+    assert sorted(response.json()["updatedCount"] for response in responses) == [0, 0, 0, 20]
+    for row in rows:
+        await db.refresh(row)
+        assert row.read_at is not None
+    await db.refresh(other)
+    assert other.read_at is None
 
 
 async def test_concurrent_creation_and_deletion_do_not_duplicate_or_resurrect(client, db):

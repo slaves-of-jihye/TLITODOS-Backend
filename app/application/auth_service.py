@@ -157,6 +157,13 @@ async def update_font(session: AsyncSession, user_id: int, font: str) -> dict:
     return {"success": True, "font": user.font}
 
 
+async def update_time_format(session: AsyncSession, user_id: int, time_format: str) -> dict:
+    user = await session.get(User, user_id)
+    user.time_format = time_format
+    await session.commit()
+    return {"success": True, "timeFormat": user.time_format}
+
+
 async def link_discord(session: AsyncSession, user_id: int, discord_auth_code: str) -> dict:
     discord_user = await fetch_discord_user(discord_auth_code)
     user = await session.get(User, user_id)

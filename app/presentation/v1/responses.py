@@ -4,6 +4,18 @@ from datetime import date
 
 from pydantic import BaseModel
 
+from app.shared.time_format import TimeFormat
+
+
+class TimeFormatSettingResponse(BaseModel):
+    success: bool
+    timeFormat: TimeFormat
+
+
+class NotificationsReadAllResponse(BaseModel):
+    success: bool
+    updatedCount: int
+
 
 class TodoResponse(BaseModel):
     todoId: int

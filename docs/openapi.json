@@ -494,6 +494,66 @@
         }
       }
     },
+    "/api/v1/users/me/time-format": {
+      "patch": {
+        "tags": [
+          "authorization"
+        ],
+        "summary": "시간 표기 방식 변경",
+        "description": "본인의 시간 표시 설정을 12H 또는 24H로 변경합니다. 기본값은 12H이며 저장된 할 일 시각과 시간대는 변경하지 않습니다.",
+        "operationId": "update_time_format_api_v1_users_me_time_format_patch",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TimeFormatSettingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimeFormatSettingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/users/me/font": {
       "patch": {
         "tags": [
@@ -3603,6 +3663,56 @@
         }
       }
     },
+    "/api/v1/notifications/todo-completed/read-all": {
+      "patch": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "할 일 완료 알림 전부 읽기",
+        "description": "본인이 받은 TODO_COMPLETED 미확인 알림 전체를 읽음 처리합니다. 다른 타입과 이미 읽은 알림은 변경하지 않으며 새로 처리한 개수를 반환합니다.",
+        "operationId": "read_all_todo_completed_api_v1_notifications_todo_completed_read_all_patch",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationsReadAllResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/notifications/{notificationId}/read": {
       "patch": {
         "tags": [
@@ -4272,6 +4382,24 @@
         ],
         "title": "NotificationsPageResponse"
       },
+      "NotificationsReadAllResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "updatedCount": {
+            "type": "integer",
+            "title": "Updatedcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "updatedCount"
+        ],
+        "title": "NotificationsReadAllResponse"
+      },
       "Recurrence": {
         "properties": {
           "frequency": {
@@ -4625,6 +4753,46 @@
           "content"
         ],
         "title": "SubtaskCreateRequest"
+      },
+      "TimeFormatSettingRequest": {
+        "properties": {
+          "timeFormat": {
+            "type": "string",
+            "enum": [
+              "12H",
+              "24H"
+            ],
+            "title": "Timeformat"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "timeFormat"
+        ],
+        "title": "TimeFormatSettingRequest"
+      },
+      "TimeFormatSettingResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "timeFormat": {
+            "type": "string",
+            "enum": [
+              "12H",
+              "24H"
+            ],
+            "title": "Timeformat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "timeFormat"
+        ],
+        "title": "TimeFormatSettingResponse"
       },
       "TodoCreateRequest": {
         "properties": {

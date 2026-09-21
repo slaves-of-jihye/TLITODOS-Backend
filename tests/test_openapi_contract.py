@@ -34,3 +34,22 @@ def test_frontend_contract_contains_new_request_and_response_fields():
             "image"
             in spec["paths"][path][method]["requestBody"]["content"]["multipart/form-data"]["schema"]["properties"]
         )
+
+
+def test_settings_and_bulk_notification_read_contract():
+    spec = app.openapi()
+    schemas = spec["components"]["schemas"]
+    request = schemas["TimeFormatSettingRequest"]
+    assert request["required"] == ["timeFormat"]
+    assert request["properties"]["timeFormat"]["enum"] == ["12H", "24H"]
+    assert request["additionalProperties"] is False
+    for path, response_name in (
+        ("/api/v1/users/me/time-format", "TimeFormatSettingResponse"),
+        ("/api/v1/notifications/todo-completed/read-all", "NotificationsReadAllResponse"),
+    ):
+        operation = spec["paths"][path]["patch"]
+        assert operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith(
+            "/" + response_name
+        )
+    assert schemas["TimeFormatSettingResponse"]["properties"]["timeFormat"]["enum"] == ["12H", "24H"]
+    assert schemas["NotificationsReadAllResponse"]["properties"]["updatedCount"]["type"] == "integer"

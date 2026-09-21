@@ -5,9 +5,11 @@ from starlette.datastructures import UploadFile
 
 from app.application import auth_service
 from app.infrastructure.database import get_session
+from app.presentation.v1.responses import TimeFormatSettingResponse
 from app.shared.auth import require_access_token
 from app.shared.fonts import SUPPORTED_FONTS
 from app.shared.scheduling import RequestModel, read_json, validate_body
+from app.shared.time_format import TimeFormat
 from app.shared.uploads import save_upload
 
 router = APIRouter(prefix="/api/v1/users/me", tags=["authorization"])
@@ -26,6 +28,10 @@ class FontSettingRequest(BaseModel):
         if value not in SUPPORTED_FONTS:
             raise ValueError("unsupported font")
         return value
+
+
+class TimeFormatSettingRequest(RequestModel):
+    time_format: TimeFormat = Field(alias="timeFormat")
 
 
 class ProfilePatchRequest(RequestModel):
@@ -98,6 +104,20 @@ async def update_notifications(
     session: AsyncSession = Depends(get_session),
 ):
     return await auth_service.update_notifications(session, user_id, payload.discord_alert_enabled)
+
+
+@router.patch(
+    "/time-format",
+    response_model=TimeFormatSettingResponse,
+    summary="시간 표기 방식 변경",
+    description="본인의 시간 표시 설정을 12H 또는 24H로 변경합니다. 기본값은 12H이며 저장된 할 일 시각과 시간대는 변경하지 않습니다.",
+)
+async def update_time_format(
+    payload: TimeFormatSettingRequest,
+    user_id: int = Depends(require_access_token),
+    session: AsyncSession = Depends(get_session),
+):
+    return await auth_service.update_time_format(session, user_id, payload.time_format)
 
 
 @router.patch("/font")

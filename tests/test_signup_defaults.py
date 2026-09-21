@@ -23,6 +23,7 @@ async def test_signup_has_categories_but_no_group_and_can_create_todos(client, d
     assert login.status_code == 200
     assert login.json()["isNewUser"] is True
     user = await db.scalar(select(User).where(User.google_sub == "new-account"))
+    assert user.time_format == "12H"
     categories = list(await db.scalars(select(Category).where(Category.user_id == user.id)))
     assert {category.name for category in categories} == {"취미", "할일"}
     assert await db.scalar(select(func.count(Group.id))) == 0
