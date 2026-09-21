@@ -5,7 +5,7 @@ from starlette.datastructures import UploadFile
 
 from app.application import auth_service
 from app.infrastructure.database import get_session
-from app.presentation.v1.responses import TimeFormatSettingResponse
+from app.presentation.v1.responses import TimeFormatSettingResponse, UserResponse
 from app.shared.auth import require_access_token
 from app.shared.fonts import SUPPORTED_FONTS
 from app.shared.scheduling import RequestModel, read_json, validate_body
@@ -46,7 +46,7 @@ class ProfilePatchRequest(RequestModel):
         return self
 
 
-@router.get("")
+@router.get("", response_model=UserResponse)
 async def get_me(
     user_id: int = Depends(require_access_token),
     session: AsyncSession = Depends(get_session),
@@ -56,6 +56,7 @@ async def get_me(
 
 @router.patch(
     "",
+    response_model=UserResponse,
     openapi_extra={
         "requestBody": {
             "content": {

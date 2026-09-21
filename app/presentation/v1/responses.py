@@ -7,6 +7,17 @@ from pydantic import BaseModel
 from app.shared.time_format import TimeFormat
 
 
+class UserResponse(BaseModel):
+    userId: int
+    name: str
+    profileImageUrl: str | None
+    bio: str
+    font: str
+    timeFormat: TimeFormat
+    isDiscordLinked: bool
+    discordAlertEnabled: bool
+
+
 class TimeFormatSettingResponse(BaseModel):
     success: bool
     timeFormat: TimeFormat
@@ -80,12 +91,16 @@ class ActorResponse(BaseModel):
 
 class TodoPreviewResponse(BaseModel):
     todoId: int
+    userId: int
     title: str
     description: str
+    startDate: date
+    dueDate: date | None
 
 
 class NotificationResponse(BaseModel):
     notificationId: int
+    groupId: int | None
     type: str
     actor: ActorResponse
     todo: TodoPreviewResponse | None

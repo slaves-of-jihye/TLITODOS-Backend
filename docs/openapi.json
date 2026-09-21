@@ -304,7 +304,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
               }
             }
           },
@@ -349,7 +351,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
               }
             }
           },
@@ -4251,6 +4255,17 @@
             "type": "integer",
             "title": "Notificationid"
           },
+          "groupId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Groupid"
+          },
           "type": {
             "type": "string",
             "title": "Type"
@@ -4308,6 +4323,7 @@
         "type": "object",
         "required": [
           "notificationId",
+          "groupId",
           "type",
           "actor",
           "todo",
@@ -5032,6 +5048,10 @@
             "type": "integer",
             "title": "Todoid"
           },
+          "userId": {
+            "type": "integer",
+            "title": "Userid"
+          },
           "title": {
             "type": "string",
             "title": "Title"
@@ -5039,13 +5059,33 @@
           "description": {
             "type": "string",
             "title": "Description"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date",
+            "title": "Startdate"
+          },
+          "dueDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duedate"
           }
         },
         "type": "object",
         "required": [
           "todoId",
+          "userId",
           "title",
-          "description"
+          "description",
+          "startDate",
+          "dueDate"
         ],
         "title": "TodoPreviewResponse"
       },
@@ -5200,6 +5240,65 @@
           "completedAt"
         ],
         "title": "TodoResponse"
+      },
+      "UserResponse": {
+        "properties": {
+          "userId": {
+            "type": "integer",
+            "title": "Userid"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "profileImageUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profileimageurl"
+          },
+          "bio": {
+            "type": "string",
+            "title": "Bio"
+          },
+          "font": {
+            "type": "string",
+            "title": "Font"
+          },
+          "timeFormat": {
+            "type": "string",
+            "enum": [
+              "12H",
+              "24H"
+            ],
+            "title": "Timeformat"
+          },
+          "isDiscordLinked": {
+            "type": "boolean",
+            "title": "Isdiscordlinked"
+          },
+          "discordAlertEnabled": {
+            "type": "boolean",
+            "title": "Discordalertenabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "userId",
+          "name",
+          "profileImageUrl",
+          "bio",
+          "font",
+          "timeFormat",
+          "isDiscordLinked",
+          "discordAlertEnabled"
+        ],
+        "title": "UserResponse"
       },
       "ValidationError": {
         "properties": {

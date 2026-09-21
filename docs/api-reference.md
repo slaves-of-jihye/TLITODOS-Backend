@@ -275,6 +275,9 @@ Get Me
 
 인증: Bearer accessToken 필수.
 
+응답 모델: [UserResponse](#schema-userresponse). `font`와 `timeFormat`은 항상 포함되며 DB의 현재 설정을 반환합니다.
+다른 기기에서 설정을 변경한 뒤 이 API를 다시 조회하면 최신값을 받습니다. 실시간 푸시 동기화는 아니므로 앱 진입/포커스 복귀 시 재조회하세요.
+
 Bearer 인증이 표시된 API는 본인 계정에만 적용됩니다. 로그인은 Google access token, 갱신·로그아웃은 본 서비스 refreshToken을 본문으로 받습니다. 갱신 후 새 refreshToken을 보관하세요. 로그아웃은 해당 refreshToken을 폐기하며 기존 accessToken을 즉시 폐기하는 구현은 아닙니다.
 
 요청 본문: 없음.
@@ -309,6 +312,8 @@ Bearer 인증이 표시된 API는 본인 계정에만 적용됩니다. 로그인
 Update Me
 
 인증: Bearer accessToken 필수.
+
+응답 모델: [UserResponse](#schema-userresponse). 프로필 변경 후에도 저장된 `font`와 `timeFormat`을 함께 반환합니다.
 
 Bearer 인증이 표시된 API는 본인 계정에만 적용됩니다. 로그인은 Google access token, 갱신·로그아웃은 본 서비스 refreshToken을 본문으로 받습니다. 갱신 후 새 refreshToken을 보관하세요. 로그아웃은 해당 refreshToken을 폐기하며 기존 accessToken을 즉시 폐기하는 구현은 아닙니다.
 
@@ -1862,6 +1867,28 @@ List Notifications
 
 본인이 받은 알림만 조회/읽음 처리합니다. 종류 TODO_COMPLETED, DIARY_CREATED, BET_REQUESTED. cursor는 이전 페이지의 nextCursor, nextCursor=null이면 마지막 페이지입니다. 그룹 탈퇴 및 일기 비공개 전환에 따라 활동 알림의 조회 권한을 다시 검사합니다.
 
+2026-09-21 달력 이동 정보 추가:
+
+- `groupId`: 수신자와 actor가 현재 공유하는 그룹 중 가장 작은 ID. 알림이 발생한 원본 그룹을 의미하지 않습니다.
+  공유 그룹이 없는 내기 요청은 null입니다. 그룹 탈퇴/삭제 후 재조회 시 현재 관계에 맞춰 변경됩니다.
+- `todo.userId`: 할 일 소유자 ID. 내기 요청의 actor는 요청자이므로 달력의 사용자로 `actor.userId`를 쓰지 마세요.
+- `todo.startDate`, `todo.dueDate`: 현재 할 일의 시작일·마감일(`YYYY-MM-DD`), 마감일이 없으면 null입니다.
+  루틴은 해당 회차 날짜입니다. 기간 할 일은 startDate로 진입할 수 있습니다. 일기 알림은 기존처럼 todo가 null입니다.
+- 날짜가 없는 기존 할 일은 일반 Todo 조회와 동일하게 시작일을 계산합니다. 알림 발생 시점의 날짜 스냅샷이 아니라 현재 할 일 날짜입니다.
+- 그룹·Todo 메타데이터를 얻기 위한 추가 요청 없이 아래 정보로 화면을 이동할 수 있습니다. 달력 내용 자체 조회는 별도입니다.
+
+```js
+const item = notification;
+if (item.todo) {
+  const params = new URLSearchParams({
+    userId: String(item.todo.userId),
+    date: item.todo.startDate,
+  });
+  if (item.groupId !== null) params.set("groupId", String(item.groupId));
+  // 프론트의 달력 라우트에 params를 전달하거나 GET /api/v1/todos?${params}에 사용합니다.
+}
+```
+
 ### 파라미터
 
 | 위치 | 이름 | 타입 | 필수 | 규칙 / 기본값 |
@@ -2296,6 +2323,7 @@ const settings = await response.json();
 | 필드 | 타입 | 필수 | 규칙 / 기본값 |
 | --- | --- | --- | --- |
 | `notificationId` | integer | 예 |  |
+| `groupId` | integer / null | 예 | 수신자와 actor의 현재 공유 그룹 중 최소 ID; 없으면 null |
 | `type` | string | 예 |  |
 | `actor` | [ActorResponse](#schema-actorresponse) | 예 |  |
 | `todo` | [TodoPreviewResponse](#schema-todopreviewresponse) / null | 예 |  |
@@ -2477,8 +2505,26 @@ const settings = await response.json();
 | 필드 | 타입 | 필수 | 규칙 / 기본값 |
 | --- | --- | --- | --- |
 | `todoId` | integer | 예 |  |
+| `userId` | integer | 예 | 할 일 소유자 ID (달력 조회 대상) |
 | `title` | string | 예 |  |
 | `description` | string | 예 |  |
+| `startDate` | string (date) | 예 | 달력 진입 날짜; 루틴은 해당 회차 날짜 |
+| `dueDate` | string (date) / null | 예 | 현재 마감일; 없으면 null |
+
+<a id="schema-userresponse"></a>
+
+### UserResponse
+
+| 필드 | 타입 | 필수 | 규칙 / 기본값 |
+| --- | --- | --- | --- |
+| `userId` | integer | 예 | 본인 ID |
+| `name` | string | 예 | 이름 |
+| `profileImageUrl` | string / null | 예 | 프로필 이미지 URL |
+| `bio` | string | 예 | 자기소개 |
+| `font` | string | 예 | 저장된 폰트 키, 기본 PRETENDARD |
+| `timeFormat` | string | 예 | 12H 또는 24H, 기본 12H |
+| `isDiscordLinked` | boolean | 예 | Discord 연결 여부 |
+| `discordAlertEnabled` | boolean | 예 | Discord 알림 설정 |
 
 <a id="schema-todoresponse"></a>
 

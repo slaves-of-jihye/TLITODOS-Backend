@@ -29,6 +29,23 @@ async def test_profile_edits_preserve_time_format(client, db):
     assert response.json()["timeFormat"] == "24H"
 
 
+async def test_profile_get_reads_font_and_time_format_saved_by_another_device(client, db):
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import app
+
+    await make_user(db, 1)
+    first = (await client.get("/api/v1/users/me", headers=auth_headers(1))).json()
+    assert first["font"] == "PRETENDARD" and first["timeFormat"] == "12H"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as second_device:
+        assert (
+            await second_device.patch("/api/v1/users/me/font", json={"font": "GOYANG"}, headers=auth_headers(1))
+        ).status_code == 200
+        assert (await second_device.patch(URL, json={"timeFormat": "24H"}, headers=auth_headers(1))).status_code == 200
+    refreshed = (await client.get("/api/v1/users/me", headers=auth_headers(1))).json()
+    assert refreshed["font"] == "GOYANG" and refreshed["timeFormat"] == "24H"
+
+
 @pytest.mark.parametrize(
     "payload",
     [

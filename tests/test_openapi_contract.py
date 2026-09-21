@@ -53,3 +53,15 @@ def test_settings_and_bulk_notification_read_contract():
         )
     assert schemas["TimeFormatSettingResponse"]["properties"]["timeFormat"]["enum"] == ["12H", "24H"]
     assert schemas["NotificationsReadAllResponse"]["properties"]["updatedCount"]["type"] == "integer"
+
+
+def test_profile_settings_and_notification_navigation_are_in_openapi():
+    spec = app.openapi()
+    schemas = spec["components"]["schemas"]
+    for method in ("get", "patch"):
+        response = spec["paths"]["/api/v1/users/me"][method]["responses"]["200"]
+        assert response["content"]["application/json"]["schema"]["$ref"].endswith("/UserResponse")
+    assert {"font", "timeFormat"} <= set(schemas["UserResponse"]["required"])
+    assert schemas["UserResponse"]["properties"]["timeFormat"]["enum"] == ["12H", "24H"]
+    assert "groupId" in schemas["NotificationResponse"]["required"]
+    assert {"userId", "startDate", "dueDate"} <= set(schemas["TodoPreviewResponse"]["required"])

@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 
 from app.infrastructure.database import (
     Bet,
@@ -10,7 +10,7 @@ from app.infrastructure.database import (
     User,
     bet_to_response,
 )
-from app.shared.scheduling import utcnow
+from app.shared.scheduling import todo_dates, utcnow
 
 NOTIFICATION_TYPES = ("TODO_COMPLETED", "DIARY_CREATED", "BET_REQUESTED")
 
@@ -57,12 +57,23 @@ async def unread_status(session, user_id):
 
 
 async def list_notifications(session, user_id, kind=None, cursor=None, limit=30):
+    # Navigation hint, not a notification's originating group: events are
+    # deduplicated across shared groups. Aggregate before joining to avoid
+    # duplicate notifications and keep pagination stable.
+    own_groups = select(GroupMember.group_id).where(GroupMember.user_id == user_id)
+    shared_groups = (
+        select(GroupMember.user_id, func.min(GroupMember.group_id).label("group_id"))
+        .where(GroupMember.group_id.in_(own_groups), GroupMember.user_id != user_id)
+        .group_by(GroupMember.user_id)
+        .subquery()
+    )
     statement = (
-        select(Notification, User, Todo, Diary, Bet)
+        select(Notification, User, Todo, Diary, Bet, shared_groups.c.group_id)
         .join(User, Notification.actor_id == User.id)
         .outerjoin(Todo, Notification.todo_id == Todo.id)
         .outerjoin(Diary, Notification.diary_id == Diary.id)
         .outerjoin(Bet, Notification.bet_id == Bet.id)
+        .outerjoin(shared_groups, shared_groups.c.user_id == Notification.actor_id)
         .where(*visible_notification_conditions(user_id))
     )
     if kind:
@@ -71,13 +82,23 @@ async def list_notifications(session, user_id, kind=None, cursor=None, limit=30)
         statement = statement.where(Notification.id < cursor)
     rows = (await session.execute(statement.order_by(Notification.id.desc()).limit(limit + 1))).all()
     items = []
-    for notification, actor, todo, diary, bet in rows[:limit]:
+    for notification, actor, todo, diary, bet, group_id in rows[:limit]:
         items.append(
             {
                 "notificationId": notification.id,
+                "groupId": group_id,
                 "type": notification.type,
                 "actor": {"userId": actor.id, "name": actor.name, "profileImageUrl": actor.profile_image_url},
-                "todo": {"todoId": todo.id, "title": todo.title, "description": todo.description} if todo else None,
+                "todo": {
+                    "todoId": todo.id,
+                    "userId": todo.user_id,
+                    "title": todo.title,
+                    "description": todo.description,
+                    "startDate": todo_dates(todo)[0].isoformat(),
+                    "dueDate": todo.due_date,
+                }
+                if todo
+                else None,
                 "diaryId": diary.id if diary else None,
                 "bet": bet_to_response(bet) if bet else None,
                 "createdAt": notification.created_at.isoformat(),

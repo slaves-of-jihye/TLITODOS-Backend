@@ -206,6 +206,11 @@ PATCH /api/v1/notifications/todo-completed/read-all
 - 페이지 제한 없이 모든 알림을 확인합니다. 조회 자체는 읽음 상태를 변경하지 않습니다.
 - 알림 읽음 처리 뒤 다시 호출하면 갱신된 결과를 받습니다. 인증 실패는 401입니다.
 항목에는 notificationId, type, actor(이름/사진/ID), todo(제목/설명/ID), diaryId, bet, createdAt, readAt이 포함됩니다.
+2026-09-21 추가: 각 항목의 `groupId`는 수신자와 actor의 현재 공유 그룹 중 최소 ID이며, 공유 그룹이 없는 내기 알림은 null입니다.
+원본 그룹을 뜻하지 않으며 그룹 관계가 바뀌면 재조회 시 달라질 수 있습니다. 여러 그룹을 공유해도 알림은 한 번만 반환합니다.
+`todo`에 `userId`, `startDate`, `dueDate`를 포함합니다. 할 일 소유자의 달력에 startDate로 진입하며 groupId가 null이면 생략합니다.
+루틴은 해당 회차 날짜, 기간 할 일은 시작일·마감일, 마감일 미설정은 dueDate=null입니다. 날짜는 원본 Todo의 현재값입니다.
+내기 actor는 요청자이므로 달력 대상은 반드시 todo.userId를 사용합니다. Todo가 없는 일기 알림은 todo=null을 유지합니다.
 이벤트와 원본 변경을 같은 DB 트랜잭션에 저장합니다. 여러 그룹을 공유해도 한 이벤트의 수신자별 알림은 하나입니다.
 공개 일기 생성/비공개→공개 시 그룹원에게 알림을 보냅니다. 비공개 전환 시 해당 알림을 제거합니다.
 그룹을 나간 후에는 과거 그룹원 활동 알림도 조회에서 제외합니다. 본인에게 온 내기 요청 알림은 유지합니다.
@@ -243,6 +248,8 @@ PATCH /api/v1/users/me
   Google 재로그인이 직접 변경한 이름·프로필 사진을 덮어쓰지 않도록 했습니다.
 - 폰트는 기존 전용 API와 기존 6개 키를 그대로 사용합니다. 기본값은 `PRETENDARD`입니다.
 - 사용자 정보(`GET /api/v1/users/me`)에 `timeFormat: "12H" | "24H"`가 추가됩니다. 기본값은 `12H`입니다.
+  GET 및 프로필 PATCH 응답 모델은 `UserResponse`이며 `font`, `timeFormat`을 필수 필드로 OpenAPI에 명시합니다.
+  두 값은 DB의 최신 설정입니다. 다른 기기의 변경은 프로필을 재조회해야 반영되며 실시간 푸시 동기화는 추가하지 않습니다.
   `PATCH /api/v1/users/me/time-format`에 `{"timeFormat": "24H"}`를 보내면 `{"success": true, "timeFormat": "24H"}`를 반환합니다.
   Bearer 인증 필수이며 본인 설정만 수정합니다. 누락/null/잘못된 값/추가 필드는 422입니다.
   프론트 화면 표시용으로만 사용하며 기존 Todo의 날짜·시각(`HH:MM`)·시간대는 바꾸지 않습니다.
