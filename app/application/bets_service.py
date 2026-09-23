@@ -3,7 +3,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import UploadFile
 
-from app.infrastructure.database import Bet, Todo, bet_to_response
+from app.infrastructure.database import Bet, Todo, User, bet_to_response
 from app.shared.uploads import save_upload
 
 
@@ -25,8 +25,7 @@ async def update_bet_status(session: AsyncSession, bet_id: int, payload, user_id
         raise HTTPException(409, detail={"message": "이미 처리된 내기입니다."})
     bet.status = payload.status
     await session.commit()
-    await session.refresh(bet)
-    return bet_to_response(bet)
+    return await get_bet(session, bet_id, user_id)
 
 
 async def upload_bet_proof(session: AsyncSession, bet_id: int, form, user_id: int) -> dict:
@@ -49,15 +48,26 @@ async def verify_bet(session: AsyncSession, bet_id: int, payload, user_id: int) 
     if payload.approved:
         bet.status = "VERIFIED"
     await session.commit()
-    await session.refresh(bet)
-    return bet_to_response(bet)
+    return await get_bet(session, bet_id, user_id)
+
+
+def bets_with_preview(user_id):
+    # One query for all preview data; missing legacy requesters must not hide bets.
+    return (
+        select(Bet, Todo, User)
+        .join(Todo, Bet.todo_id == Todo.id)
+        .outerjoin(User, Bet.requester_id == User.id)
+        .where(or_(Bet.requester_id == user_id, Todo.user_id == user_id))
+    )
+
+
+async def get_bet(session, bet_id, user_id):
+    row = (await session.execute(bets_with_preview(user_id).where(Bet.id == bet_id))).one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail={"message": "존재하지 않는 내기입니다."})
+    return bet_to_response(*row)
 
 
 async def list_bets(session, user_id):
-    bets = await session.scalars(
-        select(Bet)
-        .join(Todo, Bet.todo_id == Todo.id)
-        .where(or_(Bet.requester_id == user_id, Todo.user_id == user_id))
-        .order_by(Bet.id.desc())
-    )
-    return [bet_to_response(bet) for bet in bets]
+    rows = (await session.execute(bets_with_preview(user_id).order_by(Bet.id.desc()))).all()
+    return [bet_to_response(*row) for row in rows]

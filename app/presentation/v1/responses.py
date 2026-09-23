@@ -73,16 +73,6 @@ class DiaryResponse(BaseModel):
     createdAt: str | None
 
 
-class BetResponse(BaseModel):
-    betId: int
-    todoId: int
-    content: str
-    requesterId: int
-    status: str
-    proofImageUrl: str | None
-    isVerified: bool
-
-
 class ActorResponse(BaseModel):
     userId: int
     name: str
@@ -96,6 +86,18 @@ class TodoPreviewResponse(BaseModel):
     description: str
     startDate: date
     dueDate: date | None
+
+
+class BetResponse(BaseModel):
+    betId: int
+    todoId: int
+    content: str
+    requesterId: int
+    requesterName: str | None
+    todo: TodoPreviewResponse
+    status: str
+    proofImageUrl: str | None
+    isVerified: bool
 
 
 class NotificationResponse(BaseModel):

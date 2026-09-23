@@ -12,7 +12,6 @@ from app.infrastructure.database import (
     Category,
     Todo,
     User,
-    bet_to_response,
     todo_to_response,
 )
 from app.shared.scheduling import today, todo_dates, utcnow
@@ -254,7 +253,9 @@ async def create_bet_for_todo(session: AsyncSession, todo_id: int, payload, user
     )
     await session.commit()
     await session.refresh(bet)
-    return bet_to_response(bet)
+    from app.application.bets_service import get_bet
+
+    return await get_bet(session, bet.id, user_id)
 
 
 async def get_todo(session, todo_id):
@@ -271,6 +272,7 @@ async def clean_dependencies(session, user_id, deleted_ids):
 
 
 async def set_dependencies(session, todo_id, dependency_ids, user_id):
+    # Hobby/seeded categories are allowed in both directions, regardless of ID.
     # Serialize graph mutations per user so concurrent edits cannot create a cycle.
     await session.scalar(select(User.id).where(User.id == user_id).with_for_update(key_share=True))
     todo = await find_todo(session, todo_id, user_id)

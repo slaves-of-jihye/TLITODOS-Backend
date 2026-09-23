@@ -65,3 +65,9 @@ def test_profile_settings_and_notification_navigation_are_in_openapi():
     assert schemas["UserResponse"]["properties"]["timeFormat"]["enum"] == ["12H", "24H"]
     assert "groupId" in schemas["NotificationResponse"]["required"]
     assert {"userId", "startDate", "dueDate"} <= set(schemas["TodoPreviewResponse"]["required"])
+
+
+def test_bet_contract_has_requester_name_and_shared_todo_preview():
+    schemas = app.openapi()["components"]["schemas"]
+    assert {"requesterName", "todo"} <= set(schemas["BetResponse"]["required"])
+    assert schemas["BetResponse"]["properties"]["todo"]["$ref"].endswith("/TodoPreviewResponse")

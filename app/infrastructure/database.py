@@ -334,12 +334,28 @@ def todo_to_response(todo: Todo) -> dict:
     }
 
 
-def bet_to_response(bet: Bet) -> dict:
+def todo_preview_to_response(todo: Todo) -> dict:
+    from app.shared.scheduling import todo_dates
+
+    return {
+        "todoId": todo.id,
+        "userId": todo.user_id,
+        "title": todo.title,
+        "description": todo.description,
+        "startDate": todo_dates(todo)[0].isoformat(),
+        "dueDate": todo.due_date,
+    }
+
+
+def bet_to_response(bet: Bet, todo: Todo, requester: User | None) -> dict:
     return {
         "betId": bet.id,
         "todoId": bet.todo_id,
         "content": bet.content,
         "requesterId": bet.requester_id,
+        # Legacy requester_id has no FK; retain bets even if the user is gone.
+        "requesterName": requester.name if requester else None,
+        "todo": todo_preview_to_response(todo),
         "status": bet.status,
         "proofImageUrl": bet.proof_image_url,
         "isVerified": bet.is_verified,

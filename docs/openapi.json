@@ -3860,6 +3860,20 @@
             "type": "integer",
             "title": "Requesterid"
           },
+          "requesterName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requestername"
+          },
+          "todo": {
+            "$ref": "#/components/schemas/TodoPreviewResponse"
+          },
           "status": {
             "type": "string",
             "title": "Status"
@@ -3886,6 +3900,8 @@
           "todoId",
           "content",
           "requesterId",
+          "requesterName",
+          "todo",
           "status",
           "proofImageUrl",
           "isVerified"

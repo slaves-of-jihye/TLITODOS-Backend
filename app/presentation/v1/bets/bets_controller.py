@@ -29,9 +29,7 @@ async def list_bets(user_id: int = Depends(require_access_token), session: Async
 async def get_bet(
     betId: int, user_id: int = Depends(require_access_token), session: AsyncSession = Depends(get_session)
 ):
-    from app.infrastructure.database import bet_to_response
-
-    return bet_to_response(await bets_service.find_bet(session, betId, user_id, role="participant"))
+    return await bets_service.get_bet(session, betId, user_id)
 
 
 @router.patch("/{betId}/status", response_model=BetResponse)

@@ -1266,6 +1266,9 @@ Delete Todo
 
 ## 36. PUT /api/v1/todos/{todoId}/dependencies
 
+취미를 포함한 모든 본인 카테고리의 할 일을 연결할 수 있습니다. 카테고리 ID(1 포함), 이름, 삭제 가능 여부로 제한하지 않습니다.
+다른 사용자/없는 할 일은 404, 자기 자신/순환 관계는 422입니다. POST도 같은 검사를 적용합니다.
+
 Replace Dependencies
 
 인증: Bearer accessToken 필수.
@@ -1308,6 +1311,8 @@ Replace Dependencies
 <a id="api-37"></a>
 
 ## 37. POST /api/v1/todos/{todoId}/dependencies
+
+취미·카테고리 ID 1도 선행/후행 양쪽에 사용할 수 있습니다. PUT과 동일한 소유권·순환 검사만 적용합니다.
 
 Create Dependency
 
@@ -1531,6 +1536,30 @@ Create Bet
 <a id="api-43"></a>
 
 ## 43. GET /api/v1/bets
+
+2026-09-23: 각 내기에 `requesterName`과 `todo` 미리보기를 추가했습니다. 별도 사용자/할 일 상세 조회 없이 요청자 이름과 할 일 제목·날짜를 표시할 수 있습니다.
+기존 `requesterId`, `todoId`는 유지합니다. 생성·상세·수락/거절·검증 응답과 알림의 `bet`에도 같은 `BetResponse`를 사용합니다.
+목록의 요청자·Todo 정보는 JOIN 한 번으로 조회하며 내기 수만큼 추가 쿼리를 실행하지 않습니다.
+
+추가 필드 예시(기존 필드는 생략):
+
+```json
+{
+  "requesterName": "지혜",
+  "todo": {
+    "todoId": 101,
+    "userId": 1,
+    "title": "수학 과제",
+    "description": "문제 10개 풀기",
+    "startDate": "2026-09-23",
+    "dueDate": "2026-09-25"
+  }
+}
+```
+
+이름·제목·날짜는 원본의 현재 값입니다. `dueDate` 미설정은 null, 루틴은 해당 회차 날짜입니다.
+기존 데이터에서 요청자 계정이 없으면 `requesterName`만 null이며 내기는 유지합니다. 이 경우에만 UI에서 대체 이름을 사용하세요.
+기존 요청자/할 일 소유자 권한은 그대로입니다. DB 컬럼 추가나 마이그레이션은 필요하지 않습니다.
 
 List Bets
 
@@ -2153,6 +2182,8 @@ const settings = await response.json();
 | `todoId` | integer | 예 |  |
 | `content` | string | 예 |  |
 | `requesterId` | integer | 예 |  |
+| `requesterName` | string / null | 예 | 현재 요청자 이름; 기존 요청자 계정이 없으면 null |
+| `todo` | [TodoPreviewResponse](#schema-todopreviewresponse) | 예 | 알림과 동일한 현재 할 일 미리보기 |
 | `status` | string | 예 |  |
 | `proofImageUrl` | string / null | 예 |  |
 | `isVerified` | boolean | 예 |  |

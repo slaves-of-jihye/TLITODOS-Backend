@@ -98,6 +98,8 @@ Content-Type: application/json
 체크박스 전체 선택 결과를 한 번에 교체합니다. 빈 배열은 모두 해제합니다.
 한 항목만 해제하려면 `DELETE /api/v1/todos/101/dependencies/99`를 사용합니다.
 기존 POST 추가 API도 유지합니다. 자기 자신·순환 관계는 422, 다른 사용자/없는 ID는 404입니다.
+취미를 포함한 모든 본인 카테고리를 허용합니다. POST/PUT 모두 카테고리 ID 1, 이름, isDeletable로 선행/후행 연결을 막지 않습니다.
+2026-09-23 확인: 현재 master에는 해당 거부 검사가 없으며 ID 1 및 다른 계정의 seed된 취미를 사용하는 POST/PUT 회귀 테스트로 보장합니다.
 관계 수정은 사용자별로 직렬화해 동시 요청으로 순환이 생기는 것도 방지합니다.
 Todo/루틴 삭제 시 남은 Todo의 해당 선행 참조도 제거합니다.
 목록은 기존 위상정렬을 유지합니다. 선행 관계가 완료 자체를 금지한다는 정책은 추가하지 않습니다.
@@ -168,6 +170,12 @@ const imageSrc = URL.createObjectURL(await response.blob());
 파일 교체/행 삭제 시 오래된 파일은 URL 접근이 차단되지만 디스크에서 즉시 지우지는 않습니다. 별도 정리 작업은 운영 판단입니다.
 
 ## 4. 내기와 알림
+
+2026-09-23: `BetResponse`에 `requesterName: string | null`과 `todo: TodoPreviewResponse`를 추가합니다.
+`todo`는 알림과 같은 `{todoId, userId, title, description, startDate, dueDate}`이며 루틴은 해당 회차 날짜입니다.
+목록·상세·생성·상태 변경·검증 및 알림의 `bet`에서 동일하게 반환합니다. 기존 requesterId/todoId는 유지합니다.
+요청자 이름과 할 일 메타데이터는 현재값이며 별도 프론트 상세 조회가 필요 없습니다. 목록은 JOIN 한 번으로 읽습니다.
+기존 데이터에 요청자 계정이 없는 경우 이름만 null이며, 내기 자체는 숨기지 않습니다. DB 마이그레이션과 권한 변경은 없습니다.
 
 ```http
 POST /api/v1/todos/101/bets
