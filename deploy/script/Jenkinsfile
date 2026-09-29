@@ -1,6 +1,6 @@
 pipeline {
     agent any
-    options { disableConcurrentBuilds(); skipDefaultCheckout(true) }
+    options { disableConcurrentBuilds() }
 
     environment {
         COMPOSE_FILE = 'deploy/build/docker-compose.yml'
@@ -34,11 +34,10 @@ pipeline {
                         returnStdout: true
                     ).trim()
                     if (previousImage) {
-                        def rollbackImage = "tlitodos-backend-api:rollback-${env.BUILD_NUMBER}"
-                        withEnv(["PREVIOUS_IMAGE=${previousImage}", "ROLLBACK_IMAGE=${rollbackImage}"]) {
+                        env.ROLLBACK_IMAGE = "tlitodos-backend-api:rollback-${env.BUILD_NUMBER}"
+                        withEnv(["PREVIOUS_IMAGE=${previousImage}"]) {
                             sh 'docker image tag "$PREVIOUS_IMAGE" "$ROLLBACK_IMAGE"'
                         }
-                        env.ROLLBACK_IMAGE = rollbackImage
                     }
 
                     sh 'docker compose --env-file "$PORT_ENV_FILE" -f "$COMPOSE_FILE" build tlitodos-api'
@@ -52,7 +51,7 @@ pipeline {
                 sh '''
                     set -eu
                     docker compose --env-file "$PORT_ENV_FILE" -f "$COMPOSE_FILE" up -d --no-build --wait --wait-timeout 180 tlitodos-api tlitodos-db
-                    docker exec "$API_CONTAINER" python -c "import urllib.request; assert urllib.request.urlopen('http://127.0.0.1:8000/ping', timeout=5).read() == b'pong'"
+                    docker exec "$API_CONTAINER" python -c 'import json, urllib.request; assert json.load(urllib.request.urlopen("http://127.0.0.1:8000/ping", timeout=5)) == "pong"'
                 '''
             }
         }
