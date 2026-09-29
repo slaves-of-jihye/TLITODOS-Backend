@@ -1,0 +1,52 @@
+name: tlitodos-backend
+
+services:
+  tlitodos-api:
+    container_name: tlitodos-backend-api
+    build:
+      context: ../..
+      dockerfile: deploy/build/Dockerfile
+    env_file:
+      - ../env/backend.env
+    ports:
+      - "${BACKEND_PORT:?set BACKEND_PORT in deploy/env/.env}:8000"
+    volumes:
+      - tlitodos-backend-uploads:/app/uploads
+    networks:
+      - tlitodos-backend-network
+    depends_on:
+      tlitodos-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ping', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  tlitodos-db:
+    container_name: tlitodos-backend-db
+    image: postgres:17-alpine
+    env_file:
+      - ../env/db.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - tlitodos-backend-postgres:/var/lib/postgresql/data
+    networks:
+      - tlitodos-backend-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  tlitodos-backend-postgres:
+  tlitodos-backend-uploads:
+
+networks:
+  tlitodos-backend-network:
