@@ -14,6 +14,12 @@ https://www.notion.so/api-34d4deccb21e8024a8e1db08cf2a2f01
 - [OpenAPI](docs/openapi.json): `uv run python -m scripts.export_openapi`로 재생성
 
 
+## Deployment
+
+`deploy/script/Jenkinsfile` checks out the repository, builds and runs the Compose stack, then waits for both containers to become healthy and checks the API `/ping` endpoint. A failed build, start, or health check restores the image of the previously running API container and recreates it if needed. The first deployment cannot roll back because no prior image exists; database schema and configuration are not rolled back.
+
+Jenkins requires file credentials `tlitodos-backend-env`, `tlitodos-backend-db-env`, and `tlitodos-backend-port-env` for `deploy/env/backend.env`, `deploy/env/db.env`, and `deploy/env/.env` respectively.
+
 # Folder Structure
 ## Presentation
 Presentation 폴더의 폴더 구조는 대체로 명세서 기준으로

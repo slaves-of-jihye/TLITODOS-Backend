@@ -3,6 +3,7 @@ name: tlitodos-backend
 services:
   tlitodos-api:
     container_name: tlitodos-backend-api
+    image: tlitodos-backend-api:latest
     build:
       context: ../..
       dockerfile: deploy/build/Dockerfile

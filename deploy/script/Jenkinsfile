@@ -1,0 +1,94 @@
+pipeline {
+    agent any
+    options { disableConcurrentBuilds(); skipDefaultCheckout(true) }
+
+    environment {
+        COMPOSE_FILE = 'deploy/build/docker-compose.yml'
+        ENV_FILE = 'deploy/env/backend.env'
+        DB_ENV_FILE = 'deploy/env/db.env'
+        PORT_ENV_FILE = 'deploy/env/.env'
+        API_IMAGE = 'tlitodos-backend-api:latest'
+        API_CONTAINER = 'tlitodos-backend-api'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build & Run') {
+            steps {
+                script {
+                    withCredentials([
+                        file(credentialsId: 'tlitodos-backend-env', variable: 'SECRET_ENV_FILE'),
+                        file(credentialsId: 'tlitodos-backend-db-env', variable: 'SECRET_DB_ENV_FILE'),
+                        file(credentialsId: 'tlitodos-backend-port-env', variable: 'PORT_ENV_SOURCE')
+                    ]) {
+                        sh 'install -m 600 "$SECRET_ENV_FILE" "$ENV_FILE" && install -m 600 "$SECRET_DB_ENV_FILE" "$DB_ENV_FILE" && install -m 600 "$PORT_ENV_SOURCE" "$PORT_ENV_FILE"'
+                    }
+
+                    def previousImage = sh(
+                        script: 'docker inspect --format="{{.Image}}" "$API_CONTAINER" 2>/dev/null || true',
+                        returnStdout: true
+                    ).trim()
+                    if (previousImage) {
+                        def rollbackImage = "tlitodos-backend-api:rollback-${env.BUILD_NUMBER}"
+                        withEnv(["PREVIOUS_IMAGE=${previousImage}", "ROLLBACK_IMAGE=${rollbackImage}"]) {
+                            sh 'docker image tag "$PREVIOUS_IMAGE" "$ROLLBACK_IMAGE"'
+                        }
+                        env.ROLLBACK_IMAGE = rollbackImage
+                    }
+
+                    sh 'docker compose --env-file "$PORT_ENV_FILE" -f "$COMPOSE_FILE" build tlitodos-api'
+                    sh 'docker compose --env-file "$PORT_ENV_FILE" -f "$COMPOSE_FILE" up -d --no-build tlitodos-api tlitodos-db'
+                }
+            }
+        }
+
+        stage('Health Check') {
+            steps {
+                sh '''
+                    set -eu
+                    docker compose --env-file "$PORT_ENV_FILE" -f "$COMPOSE_FILE" up -d --no-build --wait --wait-timeout 180 tlitodos-api tlitodos-db
+                    docker exec "$API_CONTAINER" python -c "import urllib.request; assert urllib.request.urlopen('http://127.0.0.1:8000/ping', timeout=5).read() == b'\"pong\"'"
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                try {
+                    if (env.ROLLBACK_IMAGE) {
+                        if (currentBuild.currentResult == 'FAILURE') {
+                            def result = sh(returnStatus: true, script: '''
+                                set -eu
+                                docker image tag "$ROLLBACK_IMAGE" "$API_IMAGE"
+                                if [ "$(docker inspect --format='{{.Image}}' "$API_CONTAINER" 2>/dev/null)" = "$(docker image inspect --format='{{.Id}}' "$API_IMAGE")" ] &&
+                                   [ "$(docker inspect --format='{{.State.Health.Status}}' "$API_CONTAINER" 2>/dev/null)" = healthy ]; then
+                                    echo 'Previous API container is still healthy; no restart needed'
+                                else
+                                    docker compose --env-file "$PORT_ENV_FILE" -f "$COMPOSE_FILE" up -d --no-build --no-deps --force-recreate --wait --wait-timeout 180 tlitodos-api
+                                fi
+                            ''')
+                            if (result != 0) {
+                                echo "Automatic rollback failed; previous image retained as ${env.ROLLBACK_IMAGE}"
+                            } else {
+                                sh 'docker image rm "$ROLLBACK_IMAGE" || true'
+                            }
+                        } else {
+                            sh 'docker image rm "$ROLLBACK_IMAGE" || true'
+                        }
+                    } else if (currentBuild.currentResult == 'FAILURE') {
+                        echo 'No previously running API image; automatic rollback is unavailable'
+                    }
+                } finally {
+                    sh 'rm -f "$ENV_FILE" "$DB_ENV_FILE" "$PORT_ENV_FILE"'
+                }
+            }
+        }
+    }
+}
