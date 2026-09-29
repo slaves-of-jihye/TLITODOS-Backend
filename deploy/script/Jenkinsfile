@@ -52,7 +52,7 @@ pipeline {
                 sh '''
                     set -eu
                     docker compose --env-file "$PORT_ENV_FILE" -f "$COMPOSE_FILE" up -d --no-build --wait --wait-timeout 180 tlitodos-api tlitodos-db
-                    docker exec "$API_CONTAINER" python -c "import urllib.request; assert urllib.request.urlopen('http://127.0.0.1:8000/ping', timeout=5).read() == b'\"pong\"'"
+                    docker exec "$API_CONTAINER" python -c "import urllib.request; assert urllib.request.urlopen('http://127.0.0.1:8000/ping', timeout=5).read() == b'pong'"
                 '''
             }
         }
