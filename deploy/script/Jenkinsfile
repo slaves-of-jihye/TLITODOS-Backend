@@ -84,6 +84,8 @@ pipeline {
                     } else if (currentBuild.currentResult == 'FAILURE') {
                         echo 'No previously running API image; automatic rollback is unavailable'
                     }
+                } finally {
+                    
                 }
             }
         }
