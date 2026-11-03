@@ -37,6 +37,12 @@ class RoutineScheduleRequest(TimedRequest):
     request_id: UUID = Field(alias="requestId")
     start_date: date = Field(alias="startDate")
     end_date: date = Field(alias="endDate")
+    dependency_todo_ids: list[Annotated[int, Field(strict=True, gt=0)]] = Field(
+        default_factory=list,
+        alias="dependencyTodoIds",
+        max_length=100,
+        description="선행 Todo ID. 루틴이면 같은 occurrenceDate의 회차로 연결하며 없는 날짜는 연결하지 않습니다. 생략 시 신규는 없음, 전환은 원본 선행 관계를 사용합니다. 빈 배열은 선행 관계 없이 생성합니다. null은 허용하지 않습니다.",
+    )
     recurrence: Recurrence | None = None
     weekdays: list[Weekday] | None = Field(
         default=None,
@@ -44,6 +50,11 @@ class RoutineScheduleRequest(TimedRequest):
         max_length=7,
         description="이전 클라이언트 호환 필드. recurrence와 동시에 보내지 않습니다.",
     )
+
+    @field_validator("dependency_todo_ids")
+    @classmethod
+    def normalize_dependencies(cls, value):
+        return sorted(set(value))
 
     @model_validator(mode="after")
     def validate_schedule(self):

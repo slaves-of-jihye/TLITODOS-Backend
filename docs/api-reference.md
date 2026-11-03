@@ -982,6 +982,10 @@ Delete Category
 
 ## 26. POST /api/v1/todos/routines
 
+2026-11-02: `dependencyTodoIds`로 선행 할 일을 선택합니다. 일반 Todo는 모든 회차에 같은 ID를 연결하고,
+루틴 회차는 같은 `occurrence_date`의 회차를 자동 연결합니다. 선행 날짜가 없으면 연결만 생략하고 새 회차는 생성합니다.
+선택한 회차 ID로 루틴을 식별하므로 다른 날짜의 회차를 선택해도 됩니다. [상세 규칙·JavaScript 예제](routines.md)를 참고하세요.
+
 루틴 일괄 생성
 
 인증: Bearer accessToken 필수.
@@ -1007,6 +1011,9 @@ Delete Category
 <a id="api-27"></a>
 
 ## 27. POST /api/v1/todos/{todoId}/routine
+
+`dependencyTodoIds` 생략 시 원본 선행 목록을 사용합니다. 배열을 명시하면 대체하며 []는 해제합니다.
+첫 회차를 포함해 선행 루틴의 같은 반복 날짜 회차로 자동 연결합니다. 다른 사용자/없는 ID는 404, 자기 자신/순환은 422로 부분 생성 없이 거절합니다.
 
 기존 할 일을 루틴의 첫 회차로 전환
 
@@ -2404,6 +2411,9 @@ const settings = await response.json();
 
 ### RoutineCreateRequest
 
+추가 필드: `dependencyTodoIds` — 선택, 양의 정수 배열(최대 100개). null 불가. 신규 생성은 생략/[] 시 선행 없음.
+선행 루틴은 같은 반복 날짜의 회차로 연결하며, 해당 회차가 없으면 연결만 생략합니다.
+
 | 필드 | 타입 | 필수 | 규칙 / 기본값 |
 | --- | --- | --- | --- |
 | `time` | string (time) / null | 아니오 |  |
@@ -2468,6 +2478,8 @@ const settings = await response.json();
 <a id="schema-routineschedulerequest"></a>
 
 ### RoutineScheduleRequest
+
+추가 필드: `dependencyTodoIds` — 선택, 양의 정수 배열(최대 100개). null 불가. 생략 시 원본 선행 목록을 사용하고 명시 배열은 대체([]는 해제)합니다.
 
 | 필드 | 타입 | 필수 | 규칙 / 기본값 |
 | --- | --- | --- | --- |
@@ -2717,8 +2729,9 @@ Todo/루틴 삭제 시 남은 Todo의 해당 선행 참조도 제거합니다.
 - 기존 할 일 전환: `POST /api/v1/todos/{todoId}/routine`, 반복 설정만 전달합니다.
   원본 Todo ID를 **첫 생성 회차로 이동/연결**하여 중복 원본을 남기지 않습니다.
   원본의 내용/완료 상태는 보존합니다. 이후 회차는 미완료로 생성합니다.
-- 원본 설명·중요도·카테고리·기존 하위 항목·선행 참조는 복사합니다.
-  후속 회차의 하위 항목 완료 상태는 초기화됩니다. 원본 자체/외부 Todo의 선행 참조를 재배선하지 않습니다.
+- 원본 설명·중요도·카테고리·기존 하위 항목은 복사하고 후속 회차의 하위 항목 완료 상태는 초기화됩니다.
+  선행 참조는 일반 Todo면 고정 ID, 루틴이면 같은 반복 날짜 회차로 매칭하며 날짜가 없으면 연결만 생략합니다.
+  dependencyTodoIds를 생략한 전환은 원본 선행 목록을 사용합니다. 원본을 가리키는 외부 Todo 참조는 바꾸지 않습니다.
 - 한 요청당 실제 생성 회차 1~1,000개, 최대 기간 36,600일입니다. 날짜가 없는 회차는 개수에 포함하지 않습니다.
 - `GET /api/v1/todos/routines/{routineId}`는 소유자에게 생성 규칙을 반환합니다.
 - `DELETE /api/v1/todos/routines/{routineId}`는 루틴의 **완료된 것까지 모든 Todo**를 삭제합니다.

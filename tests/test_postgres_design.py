@@ -132,6 +132,32 @@ async def test_concurrent_creation_and_deletion_do_not_duplicate_or_resurrect(cl
     assert await db.scalar(select(func.count(Todo.id))) == 0
 
 
+async def test_concurrent_dependent_routine_creation_and_predecessor_deletion(client, db, session_factory):
+    from tests.test_routine_dependencies import create, ids_by_day, setup
+
+    fields = await setup(db)
+    predecessor = await create(client, fields)
+    predecessor_id = next(iter(ids_by_day(predecessor).values()))
+    payload = {**fields, "requestId": str(uuid4()), "dependencyTodoIds": [predecessor_id]}
+    responses = await asyncio.gather(
+        *[client.post("/api/v1/todos/routines", json=payload, headers=auth_headers(1)) for _ in range(4)]
+    )
+    assert all(response.status_code == 201 for response in responses)
+    assert all(response.json() == responses[0].json() for response in responses)
+    assert await db.scalar(select(func.count(TodoRoutine.id))) == 2
+    # A second dependent series races deletion; it either creates first and is
+    # cleaned by deletion, or rejects the removed predecessor without partial rows.
+    payload["requestId"] = str(uuid4())
+    created, deleted = await asyncio.gather(
+        client.post("/api/v1/todos/routines", json=payload, headers=auth_headers(1)),
+        client.delete(f"/api/v1/todos/routines/{predecessor['routineId']}", headers=auth_headers(1)),
+    )
+    assert deleted.status_code == 200
+    assert created.status_code in (201, 404)
+    async with session_factory() as fresh:
+        assert all(not row.dependencies for row in await fresh.scalars(select(Todo)))
+
+
 async def test_concurrent_conflicting_requests_and_dependency_cycles(client, db):
     await make_user(db, 1)
     category = await make_category(db, 1)

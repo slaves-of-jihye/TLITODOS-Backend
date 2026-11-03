@@ -71,3 +71,13 @@ def test_bet_contract_has_requester_name_and_shared_todo_preview():
     schemas = app.openapi()["components"]["schemas"]
     assert {"requesterName", "todo"} <= set(schemas["BetResponse"]["required"])
     assert schemas["BetResponse"]["properties"]["todo"]["$ref"].endswith("/TodoPreviewResponse")
+
+
+def test_routine_creation_and_conversion_accept_dependency_ids():
+    schemas = app.openapi()["components"]["schemas"]
+    for name in ("RoutineCreateRequest", "RoutineScheduleRequest"):
+        schema = schemas[name]
+        field = schema["properties"]["dependencyTodoIds"]
+        assert field["type"] == "array" and field["maxItems"] == 100
+        assert field["items"]["type"] == "integer" and field["items"]["exclusiveMinimum"] == 0
+        assert "dependencyTodoIds" not in schema["required"]
