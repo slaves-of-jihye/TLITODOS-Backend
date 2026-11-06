@@ -1,0 +1,151 @@
+name: Build image and update GitOps
+
+# PRs test and build without publishing; master pushes pin a published digest in GitOps.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.ref == 'refs/heads/master' && 'production-deployment' || format('ci-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+env:
+  PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/master' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_USER: tlitodos_test
+          POSTGRES_PASSWORD: ci-only-test-password
+          POSTGRES_DB: figma_qa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tlitodos_test -d figma_qa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.13.7'
+          python-version: '3.14.7'
+          enable-cache: true
+
+      - name: Install locked test dependencies
+        run: uv sync --locked
+
+      - name: Run SQLite tests
+        env:
+          JWT_SECRET: ci-only-test-signing-key-not-for-production
+        run: uv run --locked --no-sync python -m pytest
+
+      - name: Run PostgreSQL tests, including schema migrations
+        env:
+          JWT_SECRET: ci-only-test-signing-key-not-for-production
+          TLITODOS_TEST_DATABASE_URL: postgresql+asyncpg://tlitodos_test:ci-only-test-password@127.0.0.1:5432/figma_qa
+        run: uv run --locked --no-sync python -m pytest
+
+  build:
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.name }}
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve lowercase GHCR image name
+        id: image
+        shell: bash
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish image
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: ${{ env.PUBLISH == 'true' }}
+          tags: |
+            ${{ steps.image.outputs.name }}:master
+            ${{ steps.image.outputs.name }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out deployment configuration
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: parafara/tlitodos-backend-deploy
+          ref: main
+          ssh-key: ${{ secrets.TLITODOS_DEPLOY_KEY }}
+          path: deploy
+
+      - name: Update deployment image by digest
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}
+          DIGEST: ${{ needs.build.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=deploy/kubernetes/deployment.yaml
+          [[ "${DIGEST}" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo 'Unexpected image digest'; exit 1; }
+          # Rewrite exactly one matching image line, preserving the manifest layout.
+          pattern="^([[:space:]]*image: )${IMAGE//./\\.}[@:][^[:space:]]+$"
+          matches="$(grep -cE "${pattern}" "${file}" || true)"
+          [[ "${matches}" == 1 ]] || { echo "Expected one ${IMAGE} image line, found ${matches}"; exit 1; }
+          sed -i -E "s#${pattern}#\\1${IMAGE}@${DIGEST}#" "${file}"
+          grep -qF "image: ${IMAGE}@${DIGEST}" "${file}"
+          git -C deploy config user.name 'github-actions[bot]'
+          git -C deploy config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C deploy add kubernetes/deployment.yaml
+          if git -C deploy diff --cached --quiet; then
+            echo 'Deployment already references this image digest.'
+            exit 0
+          fi
+          git -C deploy commit -m "chore: deploy tlitodos-api ${GITHUB_SHA}"
+          git -C deploy push origin HEAD:main
