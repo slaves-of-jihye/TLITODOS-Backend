@@ -56,6 +56,8 @@ Content-Type: application/json
 
 ## 기존 할 일을 루틴으로 전환
 
+신규 생성과 전환 모두 `dependencyTodoIds`로 선행 할 일을 선택할 수 있습니다. 아래의 날짜별 자동 연결 규칙을 적용합니다.
+
 ```http
 POST /api/v1/todos/101/routine
 Authorization: Bearer <accessToken>
@@ -92,6 +94,44 @@ createdCount는 원본 재사용을 포함한 총 회차 수입니다.
   ]
 }
 ```
+
+## 선행 루틴 날짜별 자동 연결 (2026-11-02)
+
+```js
+const response = await fetch(`${API_URL}/api/v1/todos/routines`, {
+  method: "POST",
+  headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+  body: JSON.stringify({
+    requestId: crypto.randomUUID(), // 실제 재시도에는 이 UUID와 본문을 보관해 재사용
+    title: "운동 후 기록",
+    categoryId: 2,
+    startDate: "2026-11-02",
+    endDate: "2026-11-08",
+    recurrence: { frequency: "DAILY" },
+    dependencyTodoIds: [101], // 선행 루틴의 회차 하나를 선택
+  }),
+});
+if (!response.ok) throw new Error(`HTTP ${response.status}`);
+const result = await response.json();
+```
+
+- `dependencyTodoIds`: 양의 정수 Todo ID 배열, 최대 100개. 중복 제거·정렬, null/문자열/불리언은 422.
+- 일반 할 일을 선택하면 생성되는 모든 회차가 그 Todo ID를 참조합니다.
+- 루틴 회차를 선택하면 그 `routineId`의 **같은 `occurrence_date` 회차**를 참조합니다.
+  예: 선행 루틴 11/2=101, 11/3=102이면 새 루틴의 11/2→101, 11/3→102로 연결합니다.
+  선택한 회차가 11/3이어도 동일하게 매칭합니다. 같은 루틴의 여러 회차를 선택해도 날짜별 연결은 하나입니다.
+- 선행 루틴의 반복 요일·기간 밖이거나 회차가 삭제되어 날짜가 없으면 **그 연결만 생략**합니다. 새 루틴 회차는 그대로 생성합니다.
+  이전/다음 날짜로 대체하지 않으며, 선행 회차를 새로 만들지 않습니다.
+- 회차를 개별 수정해 표시 날짜를 옮겼어도 매칭 키는 원래 반복 날짜인 `occurrence_date`입니다.
+  `routineId`가 없는 구형 isRoutine=true Todo는 일반 Todo처럼 고정 ID로 처리합니다.
+- 신규 생성에서 생략/빈 배열은 선행 없음. 기존 Todo 전환에서 생략하면 원본의 선행 목록을 사용하고, 배열을 보내면 대체합니다. 빈 배열은 해제입니다.
+  전환된 첫 회차도 날짜별 매칭을 적용하며 원본의 ID·완료 상태는 보존합니다. 외부 Todo가 원본을 가리키는 관계는 바꾸지 않습니다.
+- 없는/타인 Todo ID는 404, 자기 자신/순환 연결은 422이며 부분 생성 없이 거절합니다.
+- 생성 시점에 연결합니다. 생성 뒤 일반 POST/PUT 선행 수정은 해당 회차만 변경하며 다른 회차로 전파하지 않습니다.
+  선행 Todo를 나중에 루틴으로 전환한다고 기존 후행 루틴을 소급 연결하지 않습니다.
+- 같은 requestId 재시도는 최초 응답만 반환합니다. 선행 회차 삭제 후 재시도해도 연결을 다시 만들지 않습니다.
+  선행 선택 ID를 바꿔 재사용하면 409입니다. 기존 요청(새 필드 없음)의 재시도는 계속 지원합니다.
+- DB 마이그레이션은 필요 없습니다. 기존 생성 응답 형식은 유지하며, 실제 연결 ID는 Todo 조회의 `dependencies`에서 확인합니다.
 
 ## 중복 방지와 재시도
 

@@ -50,6 +50,12 @@ def occurrence_dates(payload):
 
 def canonical_definition(payload, source_todo_id=None):
     result = payload.model_dump(mode="json", by_alias=True, exclude={"request_id", "weekdays"})
+    # Preserve replay compatibility with definitions written before dependencies
+    # were accepted. For conversion, [] explicitly clears inherited references.
+    if "dependency_todo_ids" not in payload.model_fields_set or (
+        source_todo_id is None and not payload.dependency_todo_ids
+    ):
+        result.pop("dependencyTodoIds", None)
     if source_todo_id is not None:
         result["sourceTodoId"] = source_todo_id
     return result
@@ -66,6 +72,41 @@ def replay_creation(routine, definition):
     if stored != definition:
         raise HTTPException(409, detail={"message": "다른 내용에 사용된 requestId입니다."})
     return routine.creation_result
+
+
+async def dependencies_by_date(session, dependency_ids, dates, user_id, source=None):
+    if not dependency_ids:
+        return {day: [] for day in dates}
+    # Read the owner's graph once: resolve all selected series in memory rather
+    # than querying for every generated occurrence. The caller holds the owner lock.
+    nodes = {todo.id: todo for todo in await session.scalars(select(Todo).where(Todo.user_id == user_id))}
+    if any(todo_id not in nodes for todo_id in dependency_ids):
+        raise HTTPException(404, detail={"message": "존재하지 않는 선행 할일입니다."})
+    if source and source.id in dependency_ids:
+        raise HTTPException(422, detail={"message": "자기 자신이나 순환 관계를 연결할 수 없습니다."})
+    selected = [nodes[todo_id] for todo_id in dependency_ids]
+    routine_ids = {todo.routine_id for todo in selected if todo.routine_id is not None}
+    occurrences = {
+        (todo.routine_id, todo.occurrence_date): todo.id
+        for todo in nodes.values()
+        if todo.routine_id in routine_ids and todo.occurrence_date is not None
+    }
+    result = {}
+    for day in dates:
+        ids = {occurrences.get((todo.routine_id, day)) if todo.routine_id is not None else todo.id for todo in selected}
+        result[day] = sorted(ids - {None})
+    if source:
+        # Only the first occurrence reuses an existing ID, so only it can close
+        # a cycle through the existing graph. Later occurrences have new IDs.
+        stack, visited = list(result[dates[0]]), set()
+        while stack:
+            current = stack.pop()
+            if current == source.id:
+                raise HTTPException(422, detail={"message": "자기 자신이나 순환 관계를 연결할 수 없습니다."})
+            if current not in visited and current in nodes:
+                visited.add(current)
+                stack.extend(nodes[current].dependencies)
+    return result
 
 
 async def create_routine(session, payload, user_id, source_todo_id=None):
@@ -105,6 +146,10 @@ async def create_routine(session, payload, user_id, source_todo_id=None):
     if len(fields["title"]) > 40 or len(fields["description"]) > 100:
         raise HTTPException(422, detail={"message": "기존 할일을 제목 40자, 설명 100자 이내로 수정한 뒤 전환하세요."})
     dates = occurrence_dates(payload)
+    dependency_ids = payload.dependency_todo_ids
+    if "dependency_todo_ids" not in payload.model_fields_set:
+        dependency_ids = list(source.dependencies) if source else []
+    planned_dependencies = await dependencies_by_date(session, dependency_ids, dates, user_id, source)
     routine = TodoRoutine(user_id=user_id, request_id=str(payload.request_id), definition=definition)
     try:
         session.add(routine)
@@ -117,6 +162,7 @@ async def create_routine(session, payload, user_id, source_todo_id=None):
                 source.occurrence_date = source.start_date = day
                 source.due_date = day.isoformat()
                 source.time, source.timezone = payload.time, payload.timezone
+                source.dependencies = planned_dependencies[day]
                 occurrences.append({"todoId": source.id, "dueDate": day.isoformat()})
                 continue
             subtasks = deepcopy(source.subtasks) if source else []
@@ -135,7 +181,7 @@ async def create_routine(session, payload, user_id, source_todo_id=None):
                     "is_routine": True,
                     "is_completed": False,
                     "subtasks": subtasks,
-                    "dependencies": list(source.dependencies) if source else [],
+                    "dependencies": planned_dependencies[day],
                 }
             )
         if values:

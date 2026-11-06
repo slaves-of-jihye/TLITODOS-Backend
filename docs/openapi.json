@@ -4525,6 +4525,16 @@
             "format": "date",
             "title": "Enddate"
           },
+          "dependencyTodoIds": {
+            "items": {
+              "type": "integer",
+              "exclusiveMinimum": 0.0
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Dependencytodoids",
+            "description": "선행 Todo ID. 루틴이면 같은 occurrenceDate의 회차로 연결하며 없는 날짜는 연결하지 않습니다. 생략 시 신규는 없음, 전환은 원본 선행 관계를 사용합니다. 빈 배열은 선행 관계 없이 생성합니다. null은 허용하지 않습니다."
+          },
           "recurrence": {
             "anyOf": [
               {
@@ -4732,6 +4742,16 @@
             "type": "string",
             "format": "date",
             "title": "Enddate"
+          },
+          "dependencyTodoIds": {
+            "items": {
+              "type": "integer",
+              "exclusiveMinimum": 0.0
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Dependencytodoids",
+            "description": "선행 Todo ID. 루틴이면 같은 occurrenceDate의 회차로 연결하며 없는 날짜는 연결하지 않습니다. 생략 시 신규는 없음, 전환은 원본 선행 관계를 사용합니다. 빈 배열은 선행 관계 없이 생성합니다. null은 허용하지 않습니다."
           },
           "recurrence": {
             "anyOf": [
